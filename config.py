@@ -160,4 +160,22 @@ URL=https://your-app-name.herokuapp.com/
 PORT=8080
 
 # Auto Delete Configuration
-AUTO_
+AUTO_DELETE=0  # 1 to enable, 0 to disable
+AUTO_DELETE_TIME=600  # Time in seconds before auto delete
+
+# File Size Configuration
+MAX_FILE_SIZE=2147483648  # Maximum file size in bytes (2GB)
+
+# URL Shortener Configuration (Optional)
+USE_SHORTENER=0  # 1 to enable, 0 to disable
+SHORTENER_API=your_shortener_api_key
+SHORTENER_URL=https://your-shortener-domain.com
+
+# Feature Configuration
+FORCE_SUB_CHANNEL=0  # Channel ID for force subscription (optional)
+TOKEN_VERIFICATION=0  # 1 to enable token verification, 0 to disable
+
+# Custom Messages (Optional)
+START_MESSAGE="Custom start message here"
+FORCE_SUB_MESSAGE="Custom force subscription message here"
+"""
