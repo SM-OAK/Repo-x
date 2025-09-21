@@ -1,89 +1,163 @@
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 
-
-import re
 import os
-from os import environ
-from Script import script
+from typing import List
 
-id_pattern = re.compile(r'^.\d+$')
-def is_enabled(value, default):
-    if value.lower() in ["true", "yes", "1", "enable", "y"]:
-        return True
-    elif value.lower() in ["false", "no", "0", "disable", "n"]:
-        return False
-    else:
-        return default
-      
-# Bot Information
-API_ID = int(environ.get("API_ID", ""))
-API_HASH = environ.get("API_HASH", "")
-BOT_TOKEN = environ.get("BOT_TOKEN", "")
-
-PICS = (environ.get('PICS', 'https://graph.org/file/ce1723991756e48c35aa1.jpg')).split() # Bot Start Picture
-ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '').split()]
-BOT_USERNAME = environ.get("BOT_USERNAME", "") # without @
-PORT = environ.get("PORT", "8080")
-
-# Clone Info :-
-CLONE_MODE = bool(environ.get('CLONE_MODE', False)) # Set True or False
-
-# If Clone Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-CLONE_DB_URI = environ.get("CLONE_DB_URI", "")
-CDB_NAME = environ.get("CDB_NAME", "clonetechvj")
-
-# Database Information
-DB_URI = environ.get("DB_URI", "")
-DB_NAME = environ.get("DB_NAME", "techvjbotz")
-
-# Auto Delete Information
-AUTO_DELETE_MODE = bool(environ.get('AUTO_DELETE_MODE', True)) # Set True or False
-
-# If Auto Delete Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-AUTO_DELETE = int(environ.get("AUTO_DELETE", "30")) # Time in Minutes
-AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "1800")) # Time in Seconds
-
-# Channel Information
-LOG_CHANNEL = int(environ.get("LOG_CHANNEL", ""))
-
-# File Caption Information
-CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")
-BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION)
-
-# Enable - True or Disable - False
-PUBLIC_FILE_STORE = is_enabled((environ.get('PUBLIC_FILE_STORE', "True")), True)
-
-# Verify Info :-
-VERIFY_MODE = bool(environ.get('VERIFY_MODE', False)) # Set True or False
-
-# If Verify Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-SHORTLINK_URL = environ.get("SHORTLINK_URL", "") # shortlink domain without https://
-SHORTLINK_API = environ.get("SHORTLINK_API", "") # shortlink api
-VERIFY_TUTORIAL = environ.get("VERIFY_TUTORIAL", "") # how to open link 
-
-# Website Info:
-WEBSITE_URL_MODE = bool(environ.get('WEBSITE_URL_MODE', False)) # Set True or False
-
-# If Website Url Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-WEBSITE_URL = environ.get("WEBSITE_URL", "") # For More Information Check Video On Yt - @Tech_VJ
-
-# File Stream Config
-STREAM_MODE = bool(environ.get('STREAM_MODE', True)) # Set True or False
-
-# If Stream Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-MULTI_CLIENT = False
-SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
-PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))  # 20 minutes
-if 'DYNO' in environ:
-    ON_HEROKU = True
-else:
-    ON_HEROKU = False
-URL = environ.get("URL", "https://testofvjfilter-1fa60b1b8498.herokuapp.com/")
-
-
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+class Config:
+    # Telegram API Credentials
+    API_ID: int = int(os.environ.get("API_ID", "0"))
+    API_HASH: str = os.environ.get("API_HASH", "")
+    BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
+    BOT_USERNAME: str = os.environ.get("BOT_USERNAME", "")
     
+    # Database Configuration
+    DB_URI: str = os.environ.get("DB_URI", "")
+    DB_NAME: str = os.environ.get("DB_NAME", "FileStore")
+    
+    # Channel Configuration
+    DB_CHANNEL: int = int(os.environ.get("DB_CHANNEL", "0"))  # Channel to store files
+    LOG_CHANNEL: int = int(os.environ.get("LOG_CHANNEL", "0"))  # Channel for activity logs
+    
+    # Admin Configuration
+    ADMINS: List[int] = list(set(int(x) for x in os.environ.get("ADMINS", "").split() if x))
+    OWNER_ID: int = int(os.environ.get("OWNER_ID", "0"))
+    
+    # Server Configuration
+    URL: str = os.environ.get("URL", "")
+    PORT: int = int(os.environ.get("PORT", "8080"))
+    
+    # Auto Delete Configuration
+    AUTO_DELETE: bool = bool(int(os.environ.get("AUTO_DELETE", "0")))
+    AUTO_DELETE_TIME: int = int(os.environ.get("AUTO_DELETE_TIME", "600"))  # seconds
+    
+    # File Size Limits
+    MAX_FILE_SIZE: int = int(os.environ.get("MAX_FILE_SIZE", "2147483648"))  # 2GB in bytes
+    
+    # URL Shortener Configuration
+    USE_SHORTENER: bool = bool(int(os.environ.get("USE_SHORTENER", "0")))
+    SHORTENER_API: str = os.environ.get("SHORTENER_API", "")
+    SHORTENER_URL: str = os.environ.get("SHORTENER_URL", "")
+    
+    # Feature Toggles
+    FORCE_SUB_CHANNEL: int = int(os.environ.get("FORCE_SUB_CHANNEL", "0"))
+    TOKEN_VERIFICATION: bool = bool(int(os.environ.get("TOKEN_VERIFICATION", "0")))
+    
+    # Messages Configuration
+    START_MESSAGE: str = os.environ.get("START_MESSAGE", """
+👋 **Hello {first_name}!**
+
+🤖 **I'm a File Store Bot that can store all types of files!**
+
+**📂 Supported File Types:**
+• 📄 Documents (PDF, DOCX, TXT, etc.)
+• 🎥 Videos (MP4, AVI, MKV, etc.)
+• 🎵 Audio (MP3, WAV, FLAC, etc.)
+• 🖼️ Images (JPG, PNG, GIF, etc.)
+• 📁 Archives (ZIP, RAR, 7Z, etc.)
+• 🎬 Animations & GIFs
+• 🎤 Voice messages
+• 🎪 Stickers
+• And much more!
+
+Send me a file to get started! 🚀
+    """)
+    
+    FORCE_SUB_MESSAGE: str = os.environ.get("FORCE_SUB_MESSAGE", """
+❌ **Access Denied!**
+
+🔐 You must join our channel first to use this bot.
+
+**Please join the channel and try again:**
+    """)
+    
+    # Validation
+    @classmethod
+    def validate(cls) -> bool:
+        """Validate required configuration"""
+        required_vars = [
+            cls.API_ID,
+            cls.API_HASH,
+            cls.BOT_TOKEN,
+            cls.BOT_USERNAME,
+            cls.DB_URI
+        ]
+        
+        if not all(required_vars):
+            missing = []
+            if not cls.API_ID: missing.append("API_ID")
+            if not cls.API_HASH: missing.append("API_HASH")
+            if not cls.BOT_TOKEN: missing.append("BOT_TOKEN")
+            if not cls.BOT_USERNAME: missing.append("BOT_USERNAME")
+            if not cls.DB_URI: missing.append("DB_URI")
+            
+            print(f"❌ Missing required environment variables: {', '.join(missing)}")
+            return False
+        
+        if cls.DB_CHANNEL == 0:
+            print("⚠️ Warning: DB_CHANNEL not set. Files will be stored using message IDs only.")
+        
+        if cls.LOG_CHANNEL == 0:
+            print("⚠️ Warning: LOG_CHANNEL not set. Activity logging disabled.")
+        
+        if not cls.ADMINS:
+            print("⚠️ Warning: No ADMINS set. Broadcast feature disabled.")
+        
+        return True
+    
+    @classmethod
+    def print_config(cls):
+        """Print configuration summary"""
+        print("\n" + "="*50)
+        print("🤖 FILE STORE BOT CONFIGURATION")
+        print("="*50)
+        print(f"📱 Bot Username: @{cls.BOT_USERNAME}")
+        print(f"🗄️  Database: {'✅ Connected' if cls.DB_URI else '❌ Not configured'}")
+        print(f"📁 DB Channel: {'✅ Set' if cls.DB_CHANNEL else '❌ Not set'}")
+        print(f"📋 Log Channel: {'✅ Set' if cls.LOG_CHANNEL else '❌ Not set'}")
+        print(f"👥 Admins: {len(cls.ADMINS)} configured")
+        print(f"🗑️  Auto Delete: {'✅ Enabled' if cls.AUTO_DELETE else '❌ Disabled'}")
+        print(f"📊 Max File Size: {cls.format_size(cls.MAX_FILE_SIZE)}")
+        print(f"🔗 URL Shortener: {'✅ Enabled' if cls.USE_SHORTENER else '❌ Disabled'}")
+        print("="*50 + "\n")
+    
+    @staticmethod
+    def format_size(size_bytes: int) -> str:
+        """Format file size"""
+        if size_bytes == 0:
+            return "0B"
+        size_names = ["B", "KB", "MB", "GB", "TB"]
+        i = 0
+        while size_bytes >= 1024 and i < len(size_names) - 1:
+            size_bytes /= 1024
+            i += 1
+        return f"{size_bytes:.1f} {size_names[i]}"
+
+# Environment variables template for easy setup
+ENV_TEMPLATE = """
+# Telegram API Configuration (Get from my.telegram.org)
+API_ID=your_api_id
+API_HASH=your_api_hash
+
+# Bot Configuration (Get from @BotFather)
+BOT_TOKEN=your_bot_token
+BOT_USERNAME=your_bot_username_without_@
+
+# Database Configuration (MongoDB URI)
+DB_URI=mongodb://username:password@host:port/database
+DB_NAME=FileStore
+
+# Channel Configuration
+DB_CHANNEL=-100xxxxxxxxx  # Channel where files are stored (must be channel ID)
+LOG_CHANNEL=-100xxxxxxxxx  # Channel for activity logs (optional)
+
+# Admin Configuration
+ADMINS=user_id1 user_id2 user_id3  # Space separated user IDs
+OWNER_ID=your_user_id
+
+# Server Configuration (for deployment)
+URL=https://your-app-name.herokuapp.com/
+PORT=8080
+
+# Auto Delete Configuration
+AUTO_
