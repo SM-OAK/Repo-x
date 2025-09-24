@@ -3,4 +3,4 @@
 
 from .database import db
 
-__all__ = ['db']￼Enter
+__all__ = ['db']
