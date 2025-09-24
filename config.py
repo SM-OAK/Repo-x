@@ -8,7 +8,7 @@ class Config:
     # Telegram API Credentials
     API_ID: int = int(os.environ.get("API_ID", "22321078"))
     API_HASH: str = os.environ.get("API_HASH", "9960806d290cf4170e43355fcc3687ac")
-    BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "8251719855:AAH8O0OeEoAjNrtQ9IOOBYfblS4xvT2Dksw")
+    BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "8470211855:AAEcGaw7JlH4sHRuXS6L4BTC8rG9HkRJowQ")
     BOT_USERNAME: str = os.environ.get("BOT_USERNAME", "Svadvance2_bot")
     
     # Database Configuration
