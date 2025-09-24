@@ -2,9 +2,15 @@
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from database.database import db
-import base64
 import asyncio
+
+# Database import (optional - will work without database)
+try:
+    from database.database import db
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    print("⚠️ Database module not found. Bot will work without database features.")
 
 # Function to encode message ID for shareable link
 def encode_file_id(s: str) -> str:
@@ -23,11 +29,13 @@ def decode_file_id(s: str) -> str:
 async def handle_file_share(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # Add user to database if not exists
-    try:
-        await db.add_user(user_id)
-    except:
-        pass
+    # Add user to database if not exists (optional)
+    if DATABASE_AVAILABLE:
+        try:
+            await db.add_user(user_id)
+        except Exception as e:
+            print(f"Database error: {e}")
+            pass
     
     # Process the file
     processing_msg = await message.reply_text(
@@ -50,11 +58,13 @@ async def handle_file_share(client: Client, message: Message):
         bot_username = client.username or "YourBotUsername"
         shareable_link = f"https://t.me/{bot_username}?start=file_{encoded_file_id}"
         
-        # Store file info in database
-        try:
-            await db.add_file(file_id, user_id)
-        except:
-            pass
+        # Store file info in database (optional)
+        if DATABASE_AVAILABLE:
+            try:
+                await db.add_file(file_id, user_id)
+            except Exception as e:
+                print(f"Database error: {e}")
+                pass
         
         # Get file details for display
         file_name = "Unknown"
@@ -227,9 +237,13 @@ async def file_stats(client: Client, message: Message):
         return
     
     try:
-        # Get statistics from database
-        total_files = await db.total_files_count()
-        total_users = await db.total_users_count()
+        # Get statistics from database (optional)
+        if DATABASE_AVAILABLE:
+            total_files = await db.total_files_count()
+            total_users = await db.total_users_count()
+        else:
+            total_files = "N/A (Database disabled)"
+            total_users = "N/A (Database disabled)"
         
         stats_text = f"""📊 **FILE STATISTICS**
 
