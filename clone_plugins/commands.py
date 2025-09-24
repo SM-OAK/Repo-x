@@ -2,8 +2,14 @@
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from database.database import db
 import asyncio
+# Database import (optional - will work without database)
+try:
+    from database.database import db
+    DATABASE_AVAILABLE = True
+except ImportError:
+    DATABASE_AVAILABLE = False
+    print("⚠️ Database module not found. Bot will work without database features.")
 
 # Welcome message like in your screenshot
 START_MESSAGE = """😊 **HEY** ,
@@ -66,11 +72,13 @@ def get_about_keyboard():
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # Add user to database
-    try:
-        await db.add_user(user_id)
-    except:
-        pass
+    # Add user to database (optional)
+    if DATABASE_AVAILABLE:
+        try:
+            await db.add_user(user_id)
+        except Exception as e:
+            print(f"Database error: {e}")
+            pass
     
     # Send welcome message with buttons
     await message.reply_text(
@@ -198,7 +206,11 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
     
     elif data == "bot_stats":
         try:
-            total_users = await db.total_users_count()
+            if DATABASE_AVAILABLE:
+                total_users = await db.total_users_count()
+            else:
+                total_users = "N/A (Database disabled)"
+            
             stats_text = f"""**📊 BOT STATISTICS**
 
 👥 **Total Users:** {total_users}
@@ -208,8 +220,8 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
 
 **Bot is running perfectly!**"""
             await callback_query.edit_message_text(stats_text, reply_markup=get_about_keyboard())
-        except:
-            await callback_query.answer("📊 Loading statistics...", show_alert=True)
+        except Exception as e:
+            await callback_query.answer(f"📊 Error loading statistics: {str(e)}", show_alert=True)
     
     elif data == "version_info":
         version_text = """**🔄 VERSION INFORMATION**
