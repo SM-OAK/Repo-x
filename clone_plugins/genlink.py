@@ -1,8 +1,12 @@
-# clone_plugins/genlink.py - Link Generation Handler
+# clone_plugins/genlink.py - Corrected Link Generation Handler
 
+import asyncio
+import base64
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-import asyncio
+
+# Import specific variables from the config file
+from config import CHANNEL_ID, ADMINS
 
 # Database import (optional - will work without database)
 try:
@@ -18,7 +22,7 @@ def encode_file_id(s: str) -> str:
     base64_bytes = base64.urlsafe_b64encode(string_bytes)
     return base64_bytes.decode("ascii").strip("=")
 
-# Function to decode message ID from shareable link  
+# Function to decode message ID from shareable link
 def decode_file_id(s: str) -> str:
     s = s + "=" * (-len(s) % 4)
     string_bytes = base64.urlsafe_b64decode(s)
@@ -43,11 +47,9 @@ async def handle_file_share(client: Client, message: Message):
     )
     
     try:
-        # Forward message to storage channel (you need to set CHANNEL_ID in config)
-        from config import Config
-        
-        if hasattr(Config, 'CHANNEL_ID'):
-            forwarded_msg = await message.forward(Config.CHANNEL_ID)
+        # Forward message to storage channel
+        if CHANNEL_ID:
+            forwarded_msg = await message.forward(CHANNEL_ID)
             file_id = forwarded_msg.id
         else:
             # If no storage channel, use message ID directly
@@ -55,7 +57,7 @@ async def handle_file_share(client: Client, message: Message):
         
         # Generate shareable link
         encoded_file_id = encode_file_id(str(file_id))
-        bot_username = client.username or "YourBotUsername"
+        bot_username = (await client.get_me()).username
         shareable_link = f"https://t.me/{bot_username}?start=file_{encoded_file_id}"
         
         # Store file info in database (optional)
@@ -88,9 +90,7 @@ async def handle_file_share(client: Client, message: Message):
 
 📁 **File Name:** `{file_name}`
 📏 **File Size:** `{file_size}`
-🔗 **Shareable Link:** 
-
-`{shareable_link}`
+🔗 **Shareable Link:** `{shareable_link}`
 
 **📋 How to use:**
 • Copy the link above
@@ -165,13 +165,11 @@ async def handle_file_access(client: Client, message: Message):
             
             # Get file from storage channel or database
             try:
-                from config import Config
-                
-                if hasattr(Config, 'CHANNEL_ID'):
+                if CHANNEL_ID:
                     # Copy message from storage channel
                     await client.copy_message(
                         chat_id=message.from_user.id,
-                        from_chat_id=Config.CHANNEL_ID,
+                        from_chat_id=CHANNEL_ID,
                         message_id=file_id
                     )
                 else:
@@ -230,9 +228,8 @@ async def try_again_callback(client: Client, callback_query):
 async def file_stats(client: Client, message: Message):
     user_id = message.from_user.id
     
-    # Check if user is admin (you need to define admin IDs in config)
-    from config import Config
-    if hasattr(Config, 'ADMINS') and user_id not in Config.ADMINS:
+    # Check if user is admin
+    if ADMINS and user_id not in ADMINS:
         await message.reply_text("❌ **Access Denied!** This command is for admins only.")
         return
     
@@ -260,3 +257,4 @@ async def file_stats(client: Client, message: Message):
         
     except Exception as e:
         await message.reply_text(f"❌ **Error fetching stats:** `{str(e)}`")
+
