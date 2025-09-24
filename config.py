@@ -6,22 +6,22 @@ from typing import List
 
 class Config:
     # Telegram API Credentials
-    API_ID: int = int(os.environ.get("API_ID", "0"))
-    API_HASH: str = os.environ.get("API_HASH", "")
-    BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "")
+    API_ID: int = int(os.environ.get("API_ID", "22321078"))
+    API_HASH: str = os.environ.get("API_HASH", "9960806d290cf4170e43355fcc3687ac")
+    BOT_TOKEN: str = os.environ.get("BOT_TOKEN", "8251719855:AAH8O0OeEoAjNrtQ9IOOBYfblS4xvT2Dksw")
     BOT_USERNAME: str = os.environ.get("BOT_USERNAME", "")
     
     # Database Configuration
-    DB_URI: str = os.environ.get("DB_URI", "")
+    DB_URI: str = os.environ.get("DB_URI", "mongodb+srv://mysimplestats:simplestats@cluster0.uelokbe.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
     DB_NAME: str = os.environ.get("DB_NAME", "FileStore")
     
     # Channel Configuration
-    DB_CHANNEL: int = int(os.environ.get("DB_CHANNEL", "0"))  # Channel to store files
-    LOG_CHANNEL: int = int(os.environ.get("LOG_CHANNEL", "0"))  # Channel for activity logs
+    DB_CHANNEL: int = int(os.environ.get("DB_CHANNEL", "100209196669"))  # Channel to store files
+    LOG_CHANNEL: int = int(os.environ.get("LOG_CHANNEL", "100291358571"))  # Channel for activity logs
     
     # Admin Configuration
     ADMINS: List[int] = list(set(int(x) for x in os.environ.get("ADMINS", "").split() if x))
-    OWNER_ID: int = int(os.environ.get("OWNER_ID", "0"))
+    OWNER_ID: int = int(os.environ.get("OWNER_ID", "6226520145"))
     
     # Server Configuration
     URL: str = os.environ.get("URL", "")
