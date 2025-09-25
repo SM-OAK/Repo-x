@@ -1,8 +1,21 @@
-# clone_plugins/commands.py - Updated Start Command Handler
+# clone_plugins/commands.py - Fixed for Pyrogram compatibility
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+
+# Fix for Pyrogram version compatibility - handle StopPropagation import
+try:
+    from pyrogram.errors import StopPropagation
+except ImportError:
+    try:
+        from pyrogram import StopPropagation
+    except ImportError:
+        # Create dummy StopPropagation if not available
+        class StopPropagation(Exception):
+            pass
+
 import asyncio
+
 # Database import (optional - will work without database)
 try:
     from database.database import db
@@ -72,6 +85,11 @@ def get_about_keyboard():
 async def start_command(client: Client, message: Message):
     user_id = message.from_user.id
     
+    # Check if it's a file access request first
+    if len(message.command) > 1 and message.command[1].startswith("file_"):
+        # This will be handled by genlink.py, so we skip it here
+        return
+    
     # Add user to database (optional)
     if DATABASE_AVAILABLE:
         try:
@@ -81,27 +99,33 @@ async def start_command(client: Client, message: Message):
             pass
     
     # Send welcome message with buttons
-    await message.reply_text(
-        text=START_MESSAGE,
-        reply_markup=get_start_keyboard(),
-        disable_web_page_preview=True
-    )
+    try:
+        await message.reply_text(
+            text=START_MESSAGE,
+            reply_markup=get_start_keyboard(),
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        print(f"Error sending start message: {e}")
+        # Fallback message without buttons
+        await message.reply_text(START_MESSAGE)
 
 # Callback handlers for all buttons
 @Client.on_callback_query()
 async def callback_handler(client: Client, callback_query: CallbackQuery):
-    data = callback_query.data
-    user_id = callback_query.from_user.id
-    
-    # Main menu callbacks
-    if data == "help_menu":
-        await callback_query.edit_message_text(
-            "**📚 HELP MENU**\n\nChoose what you need help with:",
-            reply_markup=get_help_keyboard()
-        )
-    
-    elif data == "about_menu":
-        about_text = f"""**📋 ABOUT THIS BOT**
+    try:
+        data = callback_query.data
+        user_id = callback_query.from_user.id
+        
+        # Main menu callbacks
+        if data == "help_menu":
+            await callback_query.edit_message_text(
+                "**📚 HELP MENU**\n\nChoose what you need help with:",
+                reply_markup=get_help_keyboard()
+            )
+        
+        elif data == "about_menu":
+            about_text = """**📋 ABOUT THIS BOT**
 
 🤖 **MY NAME** - File Extra Bot
 👤 **MY BOSS** - .
@@ -109,62 +133,62 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
 📝 **LANGUAGE** - PYTHON
 📚 **LIBRARY** - PYROGRAM
 🗃️ **DATABASE** - MONGO DB"""
+            
+            await callback_query.edit_message_text(
+                about_text,
+                reply_markup=get_about_keyboard()
+            )
         
-        await callback_query.edit_message_text(
-            about_text,
-            reply_markup=get_about_keyboard()
-        )
-    
-    elif data == "settings_menu":
-        settings_text = """**HERE IS THE SETTINGS MENU**
+        elif data == "settings_menu":
+            settings_text = """**HERE IS THE SETTINGS MENU**
 
 **CUSTOMIZE YOUR SETTINGS AS PER YOUR NEED**"""
+            
+            await callback_query.edit_message_text(
+                settings_text,
+                reply_markup=get_settings_keyboard()
+            )
         
-        await callback_query.edit_message_text(
-            settings_text,
-            reply_markup=get_settings_keyboard()
-        )
-    
-    elif data == "back_to_main":
-        await callback_query.edit_message_text(
-            START_MESSAGE,
-            reply_markup=get_start_keyboard()
-        )
-    
-    # Settings callbacks
-    elif data == "premium_plan":
-        await callback_query.answer("💎 Premium Plan - Coming Soon!", show_alert=True)
-    
-    elif data == "link_shortner":
-        await callback_query.answer("🔗 Link Shortner - Feature Available!", show_alert=True)
-    
-    elif data == "token_verification":
-        await callback_query.answer("🎯 Token Verification - Configure in Admin Panel", show_alert=True)
-    
-    elif data == "custom_caption":
-        await callback_query.answer("🍿 Custom Caption - Set your custom captions!", show_alert=True)
-    
-    elif data == "custom_force_sub":
-        await callback_query.answer("📢 Force Subscribe - Add your channel!", show_alert=True)
-    
-    elif data == "custom_button":
-        await callback_query.answer("⚪ Custom Button - Create custom buttons!", show_alert=True)
-    
-    elif data == "auto_delete":
-        await callback_query.answer("♻️ Auto Delete - Configure auto deletion timer!", show_alert=True)
-    
-    elif data == "permanent_link":
-        await callback_query.answer("∞ Permanent Link - Links never expire!", show_alert=True)
-    
-    elif data == "protect_content":
-        await callback_query.answer("🔒 Protect Content - Currently Disabled", show_alert=True)
-    
-    elif data == "stream_download":
-        await callback_query.answer("📱 Stream/Download - Currently Disabled", show_alert=True)
-    
-    # Help callbacks
-    elif data == "help_genlink":
-        help_text = """**🔗 HOW TO GENERATE LINKS**
+        elif data == "back_to_main":
+            await callback_query.edit_message_text(
+                START_MESSAGE,
+                reply_markup=get_start_keyboard()
+            )
+        
+        # Settings callbacks
+        elif data == "premium_plan":
+            await callback_query.answer("💎 Premium Plan - Coming Soon!", show_alert=True)
+        
+        elif data == "link_shortner":
+            await callback_query.answer("🔗 Link Shortner - Feature Available!", show_alert=True)
+        
+        elif data == "token_verification":
+            await callback_query.answer("🎯 Token Verification - Configure in Admin Panel", show_alert=True)
+        
+        elif data == "custom_caption":
+            await callback_query.answer("🍿 Custom Caption - Set your custom captions!", show_alert=True)
+        
+        elif data == "custom_force_sub":
+            await callback_query.answer("📢 Force Subscribe - Add your channel!", show_alert=True)
+        
+        elif data == "custom_button":
+            await callback_query.answer("⚪ Custom Button - Create custom buttons!", show_alert=True)
+        
+        elif data == "auto_delete":
+            await callback_query.answer("♻️ Auto Delete - Configure auto deletion timer!", show_alert=True)
+        
+        elif data == "permanent_link":
+            await callback_query.answer("∞ Permanent Link - Links never expire!", show_alert=True)
+        
+        elif data == "protect_content":
+            await callback_query.answer("🔒 Protect Content - Currently Disabled", show_alert=True)
+        
+        elif data == "stream_download":
+            await callback_query.answer("📱 Stream/Download - Currently Disabled", show_alert=True)
+        
+        # Help callbacks
+        elif data == "help_genlink":
+            help_text = """**🔗 HOW TO GENERATE LINKS**
 
 1. Forward any file to this bot
 2. Bot will generate a shareable link
@@ -172,11 +196,11 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
 4. Others can download using the link
 
 **Simple and Easy!**"""
+            
+            await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
         
-        await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
-    
-    elif data == "help_share":
-        help_text = """**📤 HOW TO SHARE FILES**
+        elif data == "help_share":
+            help_text = """**📤 HOW TO SHARE FILES**
 
 1. Send any media file to the bot
 2. Get the generated link
@@ -184,11 +208,11 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
 4. Recipients can access the file anytime
 
 **No File Size Limits!**"""
+            
+            await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
         
-        await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
-    
-    elif data == "help_commands":
-        help_text = """**⚙️ BOT COMMANDS**
+        elif data == "help_commands":
+            help_text = """**⚙️ BOT COMMANDS**
 
 /start - Start the bot
 /help - Get help
@@ -197,21 +221,21 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
 /broadcast - Send broadcast (Admin only)
 
 **More commands coming soon!**"""
-        
-        await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
-    
-    # About callbacks
-    elif data == "about_dev":
-        await callback_query.answer("👤 Developer Info - Contact admin for details", show_alert=True)
-    
-    elif data == "bot_stats":
-        try:
-            if DATABASE_AVAILABLE:
-                total_users = await db.total_users_count()
-            else:
-                total_users = "N/A (Database disabled)"
             
-            stats_text = f"""**📊 BOT STATISTICS**
+            await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
+        
+        # About callbacks
+        elif data == "about_dev":
+            await callback_query.answer("👤 Developer Info - Contact admin for details", show_alert=True)
+        
+        elif data == "bot_stats":
+            try:
+                if DATABASE_AVAILABLE:
+                    total_users = await db.total_users_count()
+                else:
+                    total_users = "N/A (Database disabled)"
+                
+                stats_text = f"""**📊 BOT STATISTICS**
 
 👥 **Total Users:** {total_users}
 🔗 **Links Generated:** Loading...
@@ -219,33 +243,53 @@ async def callback_handler(client: Client, callback_query: CallbackQuery):
 ⏰ **Uptime:** 24/7
 
 **Bot is running perfectly!**"""
-            await callback_query.edit_message_text(stats_text, reply_markup=get_about_keyboard())
-        except Exception as e:
-            await callback_query.answer(f"📊 Error loading statistics: {str(e)}", show_alert=True)
-    
-    elif data == "version_info":
-        version_text = """**🔄 VERSION INFORMATION**
+                await callback_query.edit_message_text(stats_text, reply_markup=get_about_keyboard())
+            except Exception as e:
+                await callback_query.answer(f"📊 Error loading statistics: {str(e)}", show_alert=True)
+        
+        elif data == "version_info":
+            version_text = """**🔄 VERSION INFORMATION**
 
 **Bot Version:** v2.1.0
 **Last Updated:** Recent
 **Python Version:** 3.9+
-**Pyrogram Version:** 2.0+
+**Pyrogram Version:** Compatible
 
 **All systems running smoothly!**"""
+            
+            await callback_query.edit_message_text(version_text, reply_markup=get_about_keyboard())
         
-        await callback_query.edit_message_text(version_text, reply_markup=get_about_keyboard())
+        # Answer the callback to remove loading state
+        if not callback_query.data.startswith(('premium_plan', 'link_shortner', 'token_verification', 'custom_caption', 
+                                               'custom_force_sub', 'custom_button', 'auto_delete', 'permanent_link', 
+                                               'protect_content', 'stream_download', 'about_dev')):
+            try:
+                await callback_query.answer()
+            except:
+                pass
+                
+    except Exception as e:
+        print(f"Callback error: {e}")
+        try:
+            await callback_query.answer("❌ An error occurred. Please try again.", show_alert=True)
+        except:
+            pass
 
 # Additional commands
 @Client.on_message(filters.command("help") & filters.private)
 async def help_command(client: Client, message: Message):
-    await message.reply_text(
-        "**📚 HELP MENU**\n\nChoose what you need help with:",
-        reply_markup=get_help_keyboard()
-    )
+    try:
+        await message.reply_text(
+            "**📚 HELP MENU**\n\nChoose what you need help with:",
+            reply_markup=get_help_keyboard()
+        )
+    except Exception as e:
+        print(f"Help command error: {e}")
+        await message.reply_text("**📚 HELP MENU**\n\nSend files to generate shareable links!")
 
 @Client.on_message(filters.command("about") & filters.private)
 async def about_command(client: Client, message: Message):
-    about_text = f"""**📋 ABOUT THIS BOT**
+    about_text = """**📋 ABOUT THIS BOT**
 
 🤖 **MY NAME** - File Extra Bot  
 👤 **MY BOSS** - .
@@ -254,4 +298,31 @@ async def about_command(client: Client, message: Message):
 📚 **LIBRARY** - PYROGRAM
 🗃️ **DATABASE** - MONGO DB"""
     
-    await message.reply_text(about_text, reply_markup=get_about_keyboard())
+    try:
+        await message.reply_text(about_text, reply_markup=get_about_keyboard())
+    except Exception as e:
+        print(f"About command error: {e}")
+        await message.reply_text(about_text)
+
+# Simple stats command for testing
+@Client.on_message(filters.command("stats") & filters.private)
+async def stats_command(client: Client, message: Message):
+    try:
+        if DATABASE_AVAILABLE:
+            total_users = await db.total_users_count()
+        else:
+            total_users = "Database not connected"
+        
+        stats_text = f"""**📊 BOT STATISTICS**
+
+👥 **Total Users:** {total_users}
+🤖 **Bot Status:** Running
+⚙️ **Version:** v2.1.0
+
+**Bot is working perfectly!**"""
+        
+        await message.reply_text(stats_text)
+    except Exception as e:
+        await message.reply_text(f"**📊 Stats Error:** {str(e)}")
+
+print("✅ Commands module loaded successfully!")
