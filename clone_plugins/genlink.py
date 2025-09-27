@@ -1,4 +1,4 @@
-# clone_plugins/genlink.py - Link Generation for Cloned Bots
+# clone_plugins/genlink.py - Working File Storage & Retrieval
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
@@ -41,18 +41,22 @@ async def handle_file_share(client: Client, message: Message):
     )
     
     try:
-        # Use message ID directly for link generation
+        # Store the message ID and chat ID for retrieval
         file_id = message.id
+        chat_id = message.chat.id
+        
+        # Create a unique identifier that includes both message ID and chat ID
+        file_reference = f"{chat_id}_{file_id}"
         
         # Generate shareable link
-        encoded_file_id = encode_file_id(str(file_id))
+        encoded_file_id = encode_file_id(file_reference)
         bot_username = client.me.username if client.me else "YourBot"
         shareable_link = f"https://t.me/{bot_username}?start=file_{encoded_file_id}"
         
-        # Add file to database if available
+        # Store file info in database if available
         if DATABASE_AVAILABLE:
             try:
-                await db.add_file(file_id, user_id)
+                await db.add_file(file_id, user_id, chat_id)  # Store chat_id too
             except Exception as e:
                 print(f"Database error: {e}")
         
@@ -142,7 +146,17 @@ async def handle_file_access(client: Client, message: Message):
         try:
             # Extract encoded file ID
             encoded_file_id = message.command[1].replace("file_", "")
-            file_id = int(decode_file_id(encoded_file_id))
+            file_reference = decode_file_id(encoded_file_id)
+            
+            # Split chat_id and message_id
+            if "_" in file_reference:
+                chat_id_str, file_id_str = file_reference.split("_", 1)
+                chat_id = int(chat_id_str)
+                file_id = int(file_id_str)
+            else:
+                # Fallback for old format
+                file_id = int(file_reference)
+                chat_id = message.chat.id
             
             # Send loading message
             loading_msg = await message.reply_text(
@@ -150,11 +164,10 @@ async def handle_file_access(client: Client, message: Message):
             )
             
             try:
-                # Copy the message (assuming it's stored in the same chat)
-                # For a proper implementation, you'd store files in a channel
+                # Copy the message from the original chat
                 await client.copy_message(
                     chat_id=message.from_user.id,
-                    from_chat_id=message.chat.id,
+                    from_chat_id=chat_id,
                     message_id=file_id
                 )
                 
@@ -171,9 +184,29 @@ async def handle_file_access(client: Client, message: Message):
                 
             except Exception as e:
                 await loading_msg.edit_text(
-                    f"❌ **Error accessing file**\n\nFile might be deleted or expired.\n\n**Error:** `{str(e)}`"
+                    f"❌ **Error accessing file**\n\nFile might be deleted or expired.\n\n**Trying alternative method...**"
                 )
-                print(f"❌ Error accessing file: {str(e)}")
+                
+                # Try alternative: forward instead of copy
+                try:
+                    await client.forward_messages(
+                        chat_id=message.from_user.id,
+                        from_chat_id=chat_id,
+                        message_ids=file_id
+                    )
+                    
+                    await loading_msg.edit_text(
+                        "✅ **File delivered successfully!**\n\n📥 **Your file is ready for download above.**",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("🔗 GENERATE MORE", callback_data="back_to_main")]
+                        ])
+                    )
+                    
+                except Exception as e2:
+                    await loading_msg.edit_text(
+                        f"❌ **File not accessible**\n\nThe file might have been deleted or is no longer available.\n\n**Error:** `{str(e2)}`"
+                    )
+                    print(f"❌ Error accessing file: {str(e)} | {str(e2)}")
                 
         except Exception as e:
             await message.reply_text(
@@ -199,4 +232,4 @@ async def try_again_callback(client: Client, callback_query):
         ])
     )
 
-print("✅ Genlink module loaded successfully!")
+print("✅ Genlink module with proper file storage loaded!")
