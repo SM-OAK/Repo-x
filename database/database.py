@@ -1,4 +1,4 @@
-# database/database.py - Simple Database (Works without MongoDB)
+# database/database.py - Updated with chat_id support
 
 import asyncio
 import json
@@ -66,13 +66,14 @@ class SimpleDatabase:
             print(f"❌ Error counting users: {e}")
             return 0
     
-    async def add_file(self, file_id: int, user_id: int):
-        """Add file to database"""
+    async def add_file(self, file_id: int, user_id: int, chat_id: int = None):
+        """Add file to database with chat_id support"""
         try:
             file_key = f"{user_id}_{file_id}"
             self.files_data[file_key] = {
                 "file_id": file_id,
                 "user_id": user_id,
+                "chat_id": chat_id or user_id,  # Use user_id as fallback
                 "upload_date": "recent"
             }
             
@@ -83,7 +84,7 @@ class SimpleDatabase:
                 self._save_data(self.users_file, self.users_data)
             
             self._save_data(self.files_file, self.files_data)
-            print(f"✅ File {file_id} added for user {user_id}")
+            print(f"✅ File {file_id} added for user {user_id} in chat {chat_id}")
         except Exception as e:
             print(f"❌ Error adding file {file_id}: {e}")
     
@@ -96,6 +97,18 @@ class SimpleDatabase:
             return None
         except Exception as e:
             print(f"❌ Error getting file {file_id}: {e}")
+            return None
+    
+    async def get_file_by_reference(self, chat_id: int, file_id: int):
+        """Get file by chat_id and file_id combination"""
+        try:
+            for key, file_data in self.files_data.items():
+                if (file_data.get("file_id") == file_id and 
+                    file_data.get("chat_id") == chat_id):
+                    return file_data
+            return None
+        except Exception as e:
+            print(f"❌ Error getting file by reference: {e}")
             return None
     
     async def total_files_count(self) -> int:
@@ -119,7 +132,7 @@ try:
     import motor.motor_asyncio
     
     class MongoDatabase:
-        """MongoDB Database Handler"""
+        """MongoDB Database Handler with chat_id support"""
         
         def __init__(self):
             try:
@@ -158,12 +171,13 @@ try:
             except Exception:
                 return 0
         
-        async def add_file(self, file_id, user_id):
+        async def add_file(self, file_id, user_id, chat_id=None):
             try:
                 file_data = {
                     "_id": f"{user_id}_{file_id}",
                     "file_id": file_id,
                     "user_id": user_id,
+                    "chat_id": chat_id or user_id,
                     "upload_date": None
                 }
                 await self.files.insert_one(file_data)
@@ -173,6 +187,16 @@ try:
         async def get_file(self, file_id):
             try:
                 file_data = await self.files.find_one({"file_id": file_id})
+                return file_data
+            except Exception:
+                return None
+        
+        async def get_file_by_reference(self, chat_id, file_id):
+            try:
+                file_data = await self.files.find_one({
+                    "file_id": file_id,
+                    "chat_id": chat_id
+                })
                 return file_data
             except Exception:
                 return None
