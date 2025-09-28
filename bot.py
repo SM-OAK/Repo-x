@@ -2,87 +2,96 @@
 # Subscribe YouTube Channel For Amazing Bot @Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-
 import sys
 import glob
 import importlib
-from pathlib import Path
-from pyrogram import idle
 import logging
 import logging.config
+import asyncio
+from pathlib import Path
 
 # Get logging configurations
 logging.config.fileConfig('logging.conf')
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
+logging.getLogger("aiohttp.access").setLevel(logging.WARNING)
 
-
-from pyrogram import Client, __version__
-from pyrogram.raw.all import layer
+from pyrogram import Client, idle
 from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT
-from typing import Union, Optional, AsyncGenerator
-from pyrogram import types
-from Script import script 
-from datetime import date, datetime 
+from Script import script
+from datetime import date, datetime
 import pytz
 from aiohttp import web
-from TechVJ.server import web_server
 
-import asyncio
-from pyrogram import idle
-from plugins.clone import restart_bots
+# --- Local Imports ---
+from TechVJ.server import web_server
 from TechVJ.bot import StreamBot
 from TechVJ.utils.keepalive import ping_server
 from TechVJ.bot.clients import initialize_clients
+from plugins.clone import restart_all_clones # Corrected function name
 
-
-ppath = "plugins/*.py"
-files = glob.glob(ppath)
-StreamBot.start()
-loop = asyncio.get_event_loop()
-
-
-async def start():
-    print('\n')
-    print('Initalizing Tech VJ Bot')
+async def main():
+    """Main function to initialize and run the bot."""
+    
+    # Start the main bot client first
+    await StreamBot.start()
+    
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
+    
+    print("\nInitializing Client...")
     await initialize_clients()
+    
+    # Dynamically import all plugins
+    ppath = "plugins/*.py"
+    files = glob.glob(ppath)
+    print("\nImporting Plugins...")
     for name in files:
-        with open(name) as a:
-            patt = Path(a.name)
-            plugin_name = patt.stem.replace(".py", "")
-            plugins_dir = Path(f"plugins/{plugin_name}.py")
-            import_path = "plugins.{}".format(plugin_name)
-            spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
-            load = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(load)
-            sys.modules["plugins." + plugin_name] = load
-            print("Tech VJ Imported => " + plugin_name)
+        try:
+            with open(name) as a:
+                patt = Path(a.name)
+                plugin_name = patt.stem
+                import_path = f"plugins.{plugin_name}"
+                spec = importlib.util.spec_from_file_location(import_path, name)
+                load = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(load)
+                sys.modules[import_path] = load
+                print(f"✅ Imported: {plugin_name}")
+        except Exception as e:
+            print(f"❌ Failed to import {name}: {e}")
+
+    # Start the web server if on Heroku
     if ON_HEROKU:
         asyncio.create_task(ping_server())
-    me = await StreamBot.get_me()
+        app = web.AppRunner(await web_server())
+        await app.setup()
+        await web.TCPSite(app, "0.0.0.0", PORT).start()
+        print("\nWeb Server Started!")
+
+    # Send restart message
     tz = pytz.timezone('Asia/Kolkata')
     today = date.today()
     now = datetime.now(tz)
     time = now.strftime("%H:%M:%S %p")
-    app = web.AppRunner(await web_server())
-    await StreamBot.send_message(chat_id=LOG_CHANNEL, text=script.RESTART_TXT.format(today, time))
-    await app.setup()
-    bind_address = "0.0.0.0"
-    await web.TCPSite(app, bind_address, PORT).start()
+    try:
+        await StreamBot.send_message(
+            chat_id=LOG_CHANNEL, 
+            text=script.RESTART_TXT.format(today, time)
+        )
+    except Exception as e:
+        print(f"Error sending restart message to LOG_CHANNEL: {e}")
     
-    # MODIFIED: Temporarily disabled to prevent crash from invalid tokens.
-    if CLONE_MODE == True:
-        # await restart_bots()
-        pass
+    # Restart all cloned bots if clone mode is enabled
+    if CLONE_MODE:
+        print("\nRestarting Cloned Bots...")
+        await restart_all_clones()
 
-    print("Bot Started Powered By @VJ_Botz")
+    print("\nBot Started! Powered By @VJ_Botz")
     await idle()
 
 
 if __name__ == '__main__':
     try:
-        loop.run_until_complete(start())
+        asyncio.run(main())
     except KeyboardInterrupt:
         logging.info('Service Stopped Bye 👋')
