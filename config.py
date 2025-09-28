@@ -40,7 +40,7 @@ CDB_NAME = environ.get("CDB_NAME", "clonetechvj")
 LINK_GENERATION_MODE = is_enabled(environ.get('LINK_GENERATION_MODE', "True"), True)
 
 # The user ID of the main management bot. Clones will ignore the above setting.
-OWNER_BOT_ID = int(environ.get("OWNER_BOT_ID", "8470211855:AAEcGaw7JlH4sHRuXS6L4BTC8rG9HkRJowQ"))
+OWNER_BOT_ID = int(environ.get("OWNER_BOT_ID", "6226520145"))
 
 # Database Information
 DB_URI = environ.get("DB_URI", "mongodb+srv://mysimplestats:simplestats@cluster0.uelokbe.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
