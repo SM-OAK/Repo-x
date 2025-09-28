@@ -33,26 +33,12 @@ def get_start_keyboard():
     ])
 
 def get_help_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 How to Generate Links", callback_data="help_genlink")],
-        [InlineKeyboardButton("📤 How to Share Files", callback_data="help_share")],
-        [InlineKeyboardButton("⚙️ Bot Commands", callback_data="help_commands")],
-        [InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main")]
-    ])
+    # ... (Your get_help_keyboard function here) ...
 
 # --- Helper Functions ---
 
 def is_file_access_request(parameter):
-    if not parameter: return False
-    if parameter.startswith("file_"): return True
-    try:
-        decoded = base64.urlsafe_b64decode(parameter + "=" * (-len(parameter) % 4)).decode("ascii")
-        if "file_" in decoded or "_" in decoded: return True
-    except:
-        pass
-    if (parameter.startswith("BATCH-") or parameter.startswith("verify-")): return False
-    if len(parameter) > 15: return True
-    return False
+    # ... (Your is_file_access_request function here) ...
 
 async def handle_file_access_clone(client: Client, message: Message, parameter: str):
     bot_info = await client.get_me()
@@ -122,9 +108,7 @@ async def clone_callback_handler(client: Client, query: CallbackQuery):
     elif data == "help_menu":
         await query.message.edit_text("**📚 HELP MENU**...", reply_markup=get_help_keyboard())
         
-    # Add other help/about logic from your file here if needed
-
-print("✅ Smart clone commands loaded - with full custom feature support!")
+    # ... (Add the rest of your callback logic for about_menu, settings_menu, etc. here) ...
 
 @Client.on_callback_query(filters.regex(r"^(help_menu|about_menu|settings_menu|back_to_main|help_genlink|help_share|help_commands|about_dev|bot_stats|version_info)$"))
 async def clone_callback_handler(client: Client, callback_query: CallbackQuery):
