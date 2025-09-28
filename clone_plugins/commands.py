@@ -73,12 +73,7 @@ async def handle_file_access_clone(client: Client, message: Message, parameter: 
 
     except Exception as e:
         await message.reply_text(f"❌ **Invalid or expired link.**\n\n`{e}`")
-
-
-@Client.on_message(filters.command("start") & filters.private)
-async def smart_start_handler(client: Client, message: Message):
-    # ... (This function remains exactly the same as our last version) ...
-
+        
 # ... (The rest of your file, including clone_callback_handler and clone_help_about, 
 # remains exactly the same as you provided) ...
 
