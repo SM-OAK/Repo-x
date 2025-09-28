@@ -1,18 +1,14 @@
 # plugins/power.py - Corrected and integrated
-# This is your dedicated admin control panel.
-
 import config
-import asyncio # Ensure asyncio is imported
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from pymongo import MongoClient
 
-# Connect to the database that stores clone information
 mongo_client = MongoClient(config.DB_URI)
 mongo_db = mongo_client["cloned_vjbotz"]
 bots_collection = mongo_db["bots"]
 
-# --- HELPER FUNCTION to replace client.ask ---
 async def ask_for_input(client, chat_id, text, timeout=300):
     """Safely asks for and waits for a user's text response."""
     question = await client.send_message(chat_id, text)
@@ -28,7 +24,6 @@ async def ask_for_input(client, chat_id, text, timeout=300):
     finally:
         await question.delete()
 
-# --- Helper functions to build the different menus ---
 async def build_main_panel():
     buttons = [
         [InlineKeyboardButton(f"Link Sharing: {'🟢 ON' if config.LINK_GENERATION_MODE else '🔴 OFF'}", callback_data="toggle_links")],
@@ -66,7 +61,6 @@ async def build_auto_delete_menu(bot_id):
     ]
     return InlineKeyboardMarkup(buttons)
 
-# --- Main Callback Handler for the Power Panel ---
 @Client.on_callback_query(filters.regex(r"^(toggle_|admin_panel|manage_clones_menu|clone_settings_|set_auto_del_|toggle_auto_del_|set_del_time_|set_start_msg_)") & filters.user(config.ADMINS))
 async def power_panel_callbacks(client, query: CallbackQuery):
     data = query.data
