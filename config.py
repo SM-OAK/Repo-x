@@ -2,7 +2,6 @@
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-
 import re
 import os
 from os import environ
@@ -91,8 +90,22 @@ else:
     ON_HEROKU = False
 URL = environ.get("URL", "https://testofvjfilter-1fa60b1b8498.herokuapp.com/")
 
+# ========================================
+# NEW ADMIN PANEL CONFIGURATION VARIABLES
+# ========================================
+
+# Advanced Admin Panel Settings
+AUTO_DELETE_ENABLED = is_enabled(environ.get('AUTO_DELETE_ENABLED', "False"), False)  # Enable/disable auto delete globally
+MAINTENANCE_MODE = is_enabled(environ.get('MAINTENANCE_MODE', "False"), False)  # Maintenance mode for bot
+BROADCAST_ENABLED = is_enabled(environ.get('BROADCAST_ENABLED', "True"), True)  # Enable/disable broadcast feature
+WELCOME_ENABLED = is_enabled(environ.get('WELCOME_ENABLED', "True"), True)  # Enable/disable welcome messages
+
+# These variables can be modified at runtime by the admin panel
+# They are here for initial default values only
+_RUNTIME_LINK_GENERATION = LINK_GENERATION_MODE  # Backup of original setting
+_RUNTIME_CLONE_MODE = CLONE_MODE  # Backup of original setting  
+_RUNTIME_PUBLIC_FILE_STORE = PUBLIC_FILE_STORE  # Backup of original setting
 
 # Don't Remove Credit Tg - @VJ_Botz
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
 # Ask Doubt on telegram @KingVJ01
-    
