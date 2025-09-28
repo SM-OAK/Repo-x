@@ -23,7 +23,7 @@ API_HASH = environ.get("API_HASH", "9960806d290cf4170e43355fcc3687ac")
 BOT_TOKEN = environ.get("BOT_TOKEN", "8470211855:AAEcGaw7JlH4sHRuXS6L4BTC8rG9HkRJowQ")
 
 PICS = (environ.get('PICS', 'https://graph.org/file/ce1723991756e48c35aa1.jpg')).split() # Bot Start Picture
-ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '').split()]
+ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '6226520145').split()]
 BOT_USERNAME = environ.get("BOT_USERNAME", "Svadvance2_bot") # without @
 PORT = environ.get("PORT", "8080")
 
