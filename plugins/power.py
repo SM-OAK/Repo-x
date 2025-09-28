@@ -1,5 +1,5 @@
-# plugins/power.py - Updated by Gemini
-# Added full logic for Auto-Delete settings.
+# plugins/power.py - Corrected by Gemini
+# This is your dedicated admin control panel.
 
 import config
 import asyncio
@@ -16,13 +16,32 @@ bots_collection = mongo_db["bots"]
 # --- Helper functions to build the different menus ---
 
 async def build_main_panel():
-    # ... (This function remains the same) ...
+    """Builds the main admin panel menu."""
+    buttons = [
+        [InlineKeyboardButton(f"Main Bot Link Sharing: {'🟢 ON' if config.LINK_GENERATION_MODE else '🔴 OFF'}", callback_data="toggle_links")],
+        [InlineKeyboardButton(f"Bot Public Mode: {'🌍 Public' if config.PUBLIC_FILE_STORE else '🔒 Private'}", callback_data="toggle_public")],
+        [InlineKeyboardButton("🤖 Manage Clones", callback_data="manage_clones_menu")],
+        [InlineKeyboardButton("⬅️ Back to Main Menu", callback_data="start")]
+    ]
+    return InlineKeyboardMarkup(buttons)
 
 async def build_clones_list_menu(admin_id):
-    # ... (This function remains the same) ...
+    """Builds the menu that lists all cloned bots."""
+    buttons = []
+    cloned_bots = bots_collection.find({"user_id": admin_id})
+    for bot in cloned_bots:
+        buttons.append([InlineKeyboardButton(f"{bot['name']} (@{bot['username']})", callback_data=f"clone_settings_{bot['bot_id']}")])
+    buttons.append([InlineKeyboardButton("⬅️ Back", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(buttons)
 
 async def build_clone_settings_menu(bot_id):
-    # ... (This function remains the same) ...
+    """Builds the settings menu for a specific clone."""
+    buttons = [
+        [InlineKeyboardButton("✏️ Set Start Msg", callback_data=f"set_start_msg_{bot_id}")],
+        [InlineKeyboardButton("🗑️ Auto-Delete Settings", callback_data=f"set_auto_del_{bot_id}")],
+        [InlineKeyboardButton("⬅️ Back to Clones List", callback_data="manage_clones_menu")]
+    ]
+    return InlineKeyboardMarkup(buttons)
 
 async def build_auto_delete_menu(bot_id):
     """Builds the menu to manage auto-delete settings for a specific clone."""
@@ -46,12 +65,52 @@ async def power_panel_callbacks(client, query: CallbackQuery):
     data = query.data
     admin_id = query.from_user.id
 
-    # ... (admin_panel, toggle_links, toggle_public, manage_clones_menu, clone_settings_ handlers remain the same) ...
+    if data == "admin_panel":
+        await query.answer()
+        await query.message.edit_text(
+            "**⚙️ Admin Power Panel**\n\nHere you can manage your bot's live settings.",
+            reply_markup=await build_main_panel()
+        )
     
-    if data.startswith("set_start_msg_"):
-        # ... (This handler remains the same) ...
+    elif data == "toggle_links":
+        config.LINK_GENERATION_MODE = not config.LINK_GENERATION_MODE
+        await query.answer(f"Link Sharing is now {'ENABLED' if config.LINK_GENERATION_MODE else 'DISABLED'}")
+        await query.message.edit_reply_markup(await build_main_panel())
 
-    # --- New & Updated Auto-Delete Handlers ---
+    elif data == "toggle_public":
+        config.PUBLIC_FILE_STORE = not config.PUBLIC_FILE_STORE
+        await query.answer(f"Bot Mode is now {'PUBLIC' if config.PUBLIC_FILE_STORE else 'PRIVATE'}")
+        await query.message.edit_reply_markup(await build_main_panel())
+
+    elif data == "manage_clones_menu":
+        await query.answer()
+        await query.message.edit_text(
+            "**🤖 Manage Your Cloned Bots**\n\nSelect a bot from the list below to configure its settings.",
+            reply_markup=await build_clones_list_menu(admin_id)
+        )
+    
+    elif data.startswith("clone_settings_"):
+        bot_id = int(data.split("_")[2])
+        bot_details = bots_collection.find_one({"bot_id": bot_id})
+        await query.answer()
+        await query.message.edit_text(
+            f"**🛠️ Configuring: {bot_details['name']}**\n\nSelect a setting to modify for this bot.",
+            reply_markup=await build_clone_settings_menu(bot_id)
+        )
+    
+    elif data.startswith("set_start_msg_"):
+        bot_id = int(data.split("_")[2])
+        await query.message.delete()
+        try:
+            ask = await client.ask(admin_id, "Please send me the new start message for this bot.\n\nTo cancel, send /cancel", timeout=300)
+            if ask.text == "/cancel":
+                await client.send_message(admin_id, "Cancelled.")
+            else:
+                bots_collection.update_one({"bot_id": bot_id}, {"$set": {"custom_start_message": ask.text}})
+                await client.send_message(admin_id, "✅ Successfully updated the start message for this clone!")
+        except asyncio.TimeoutError:
+            await client.send_message(admin_id, "Request timed out. Please try again.")
+
     elif data.startswith("set_auto_del_"):
         bot_id = int(data.split("_")[3])
         await query.answer()
@@ -65,7 +124,6 @@ async def power_panel_callbacks(client, query: CallbackQuery):
         bot_settings = bots_collection.find_one({"bot_id": bot_id})
         current_status = bot_settings.get("auto_delete_settings", {}).get("enabled", False)
         
-        # Flip the status
         new_status = not current_status
         bots_collection.update_one(
             {"bot_id": bot_id},
@@ -94,4 +152,3 @@ async def power_panel_callbacks(client, query: CallbackQuery):
             await client.send_message(admin_id, "Request timed out.")
         except ValueError:
             await client.send_message(admin_id, "❌ Invalid input. Please send only a number.")
-
