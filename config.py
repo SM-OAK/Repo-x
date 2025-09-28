@@ -6,7 +6,6 @@ import base64
 from pyrogram import Client, filters
 from pyrogram.types import Message
 import config # Import the whole config module
-from plugins.users_api import get_user, get_short_link
 
 # This function now reads the public mode setting live from the config module
 async def allowed(_, __, message):
