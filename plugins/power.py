@@ -1,4 +1,4 @@
-# plugins/power.py - Corrected by Gemini
+# plugins/power.py - Corrected and integrated by Claude
 # This is your dedicated admin control panel.
 
 import config
@@ -60,10 +60,15 @@ async def build_auto_delete_menu(bot_id):
 
 
 # --- Main Callback Handler for the Power Panel ---
-@Client.on_callback_query(filters.regex(r"^(toggle_|admin_panel|manage_clones_menu|clone_settings_|set_)") & filters.user(config.ADMINS))
+@Client.on_callback_query(filters.regex(r"^(toggle_|admin_panel|manage_clones_menu|clone_settings_|set_)"))
 async def power_panel_callbacks(client, query: CallbackQuery):
     data = query.data
     admin_id = query.from_user.id
+    
+    # Check if user is admin (only for power panel functions)
+    if not admin_id in config.ADMINS and data.startswith(('toggle_', 'admin_panel', 'manage_clones_menu', 'clone_settings_', 'set_')):
+        await query.answer("❌ You are not authorized to use this feature.", show_alert=True)
+        return
 
     if data == "admin_panel":
         await query.answer()
@@ -84,14 +89,24 @@ async def power_panel_callbacks(client, query: CallbackQuery):
 
     elif data == "manage_clones_menu":
         await query.answer()
-        await query.message.edit_text(
-            "**🤖 Manage Your Cloned Bots**\n\nSelect a bot from the list below to configure its settings.",
-            reply_markup=await build_clones_list_menu(admin_id)
-        )
+        clones_count = bots_collection.count_documents({"user_id": admin_id})
+        if clones_count == 0:
+            await query.message.edit_text(
+                "**🤖 No Cloned Bots Found**\n\nYou haven't created any clone bots yet. Use /clone to create one.",
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅️ Back", callback_data="admin_panel")]])
+            )
+        else:
+            await query.message.edit_text(
+                f"**🤖 Manage Your Cloned Bots ({clones_count})**\n\nSelect a bot from the list below to configure its settings.",
+                reply_markup=await build_clones_list_menu(admin_id)
+            )
     
     elif data.startswith("clone_settings_"):
         bot_id = int(data.split("_")[2])
-        bot_details = bots_collection.find_one({"bot_id": bot_id})
+        bot_details = bots_collection.find_one({"bot_id": bot_id, "user_id": admin_id})
+        if not bot_details:
+            await query.answer("❌ Bot not found or you don't have permission to manage it.", show_alert=True)
+            return
         await query.answer()
         await query.message.edit_text(
             f"**🛠️ Configuring: {bot_details['name']}**\n\nSelect a setting to modify for this bot.",
@@ -99,7 +114,11 @@ async def power_panel_callbacks(client, query: CallbackQuery):
         )
     
     elif data.startswith("set_start_msg_"):
-        bot_id = int(data.split("_")[2])
+        bot_id = int(data.split("_")[3])  # Fixed index
+        bot_details = bots_collection.find_one({"bot_id": bot_id, "user_id": admin_id})
+        if not bot_details:
+            await query.answer("❌ Bot not found or you don't have permission to manage it.", show_alert=True)
+            return
         await query.message.delete()
         try:
             ask = await client.ask(admin_id, "Please send me the new start message for this bot.\n\nTo cancel, send /cancel", timeout=300)
@@ -113,6 +132,10 @@ async def power_panel_callbacks(client, query: CallbackQuery):
 
     elif data.startswith("set_auto_del_"):
         bot_id = int(data.split("_")[3])
+        bot_details = bots_collection.find_one({"bot_id": bot_id, "user_id": admin_id})
+        if not bot_details:
+            await query.answer("❌ Bot not found or you don't have permission to manage it.", show_alert=True)
+            return
         await query.answer()
         await query.message.edit_text(
             "**🗑️ Auto-Delete Settings**\n\nConfigure the auto-delete behavior for this clone.",
@@ -121,7 +144,10 @@ async def power_panel_callbacks(client, query: CallbackQuery):
 
     elif data.startswith("toggle_auto_del_"):
         bot_id = int(data.split("_")[3])
-        bot_settings = bots_collection.find_one({"bot_id": bot_id})
+        bot_settings = bots_collection.find_one({"bot_id": bot_id, "user_id": admin_id})
+        if not bot_settings:
+            await query.answer("❌ Bot not found or you don't have permission to manage it.", show_alert=True)
+            return
         current_status = bot_settings.get("auto_delete_settings", {}).get("enabled", False)
         
         new_status = not current_status
@@ -134,6 +160,10 @@ async def power_panel_callbacks(client, query: CallbackQuery):
         
     elif data.startswith("set_del_time_"):
         bot_id = int(data.split("_")[3])
+        bot_details = bots_collection.find_one({"bot_id": bot_id, "user_id": admin_id})
+        if not bot_details:
+            await query.answer("❌ Bot not found or you don't have permission to manage it.", show_alert=True)
+            return
         await query.message.delete()
         try:
             ask = await client.ask(admin_id, "Please send the new auto-delete time in **minutes** (e.g., `30`).\n\nTo cancel, send /cancel", timeout=120)
@@ -142,6 +172,10 @@ async def power_panel_callbacks(client, query: CallbackQuery):
                 return
             
             new_time = int(ask.text)
+            if new_time < 1:
+                await client.send_message(admin_id, "❌ Time must be at least 1 minute.")
+                return
+                
             bots_collection.update_one(
                 {"bot_id": bot_id},
                 {"$set": {"auto_delete_settings.time_in_minutes": new_time}}
