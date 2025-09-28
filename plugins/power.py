@@ -480,4 +480,3 @@ async def cleanup_invalid_clones():
         logging.error(f"Error during cleanup: {e}")
     
     return cleaned_count
-asyncio.create_task(load_global_settings())
