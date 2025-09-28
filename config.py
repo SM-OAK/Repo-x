@@ -34,6 +34,14 @@ CLONE_MODE = bool(environ.get('CLONE_MODE', True)) # Set True or False
 CLONE_DB_URI = environ.get("CLONE_DB_URI", "mongodb+srv://clone:clone@cluster0.e5uszpi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 CDB_NAME = environ.get("CDB_NAME", "clonetechvj")
 
+# in config.py
+
+# Set to True to allow file sharing on main bot, False to disable it.
+LINK_GENERATION_MODE = is_enabled(environ.get('LINK_GENERATION_MODE', "True"), True)
+
+# The user ID of the main management bot. Clones will ignore the above setting.
+OWNER_BOT_ID = int(environ.get("OWNER_BOT_ID", "0"))
+
 # Database Information
 DB_URI = environ.get("DB_URI", "mongodb+srv://mysimplestats:simplestats@cluster0.uelokbe.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DB_NAME = environ.get("DB_NAME", "techvjbotz")
