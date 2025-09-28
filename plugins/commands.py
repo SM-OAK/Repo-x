@@ -1,4 +1,4 @@
-# plugins/commands.py - Fully corrected and merged by Gemini
+# plugins/commands.py - Fixed and integrated by Claude
 # Don't Remove Credit Tg - @VJ_Botz
 
 import os
@@ -25,53 +25,31 @@ from plugins.power import build_main_panel
 
 logger = logging.getLogger(__name__)
 
-# ... (The rest of your file, including start, api, and base_site handlers, remains the same) ...
-
-# MERGED & FIXED: A single, complete callback handler for all buttons
-@Client.on_callback_query()
-async def cb_handler(client: Client, query: CallbackQuery):
-    data = query.data
-
-    # ADDED: Logic to handle the admin panel button press
-    if data == "admin_panel":
-        await query.answer()
-        await query.message.edit_text(
-            "**⚙️ Admin Power Panel**\n\nHere you can manage your bot's live settings.",
-            reply_markup=await build_main_panel()
-        )
-
-    elif data == "start":
-        buttons = [[
-            InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://youtube.com/@Tech_VJ')
-            ],[
-            InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url='https://t.me/vj_bot_disscussion'),
-            InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url='https://t.me/vj_botz')
-            ],[
-            InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'),
-            InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')
-        ]]
-        if config.CLONE_MODE:
-            buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='clone')])
-        
-        if query.from_user.id in config.ADMINS:
-            buttons.append([InlineKeyboardButton("⚙️ Admin Power Panel", callback_data="admin_panel")])
-            
-        try:
-            await query.message.edit_media(
-                media=InputMediaPhoto(random.choice(config.PICS)),
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-            await query.message.edit_caption(
-                caption=script.START_TXT.format(query.from_user.mention, client.me.mention),
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-        except:
-            pass # Ignore errors
-
-    # ... (The rest of your callback handlers for help, about, clone, and close_data remain the same) ...
-
-    # ... (Your deep link and file access logic) ...
-    # This part should be fine, but make sure it uses `config.VARIABLE` for all config values
+@Client.on_message(filters.command("start") & filters.private)
+async def start(client, message):
+    if len(message.command) != 1:
+        return
+    buttons = [[
+        InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://youtube.com/@Tech_VJ')
+        ],[
+        InlineKeyboardButton('🔍 sᴜᴘᴘᴏʀᴛ ɢʀᴏᴜᴘ', url='https://t.me/vj_bot_disscussion'),
+        InlineKeyboardButton('🤖 ᴜᴘᴅᴀᴛᴇ ᴄʜᴀɴɴᴇʟ', url='https://t.me/vj_botz')
+        ],[
+        InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='help'),
+        InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='about')
+    ]]
+    if config.CLONE_MODE:
+        buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='clone')])
+    
+    # Add admin button if the user is an admin
+    if message.from_user.id in config.ADMINS:
+        buttons.append([InlineKeyboardButton("⚙️ Admin Power Panel", callback_data="admin_panel")])
+    
+    await message.reply_photo(
+        photo=random.choice(config.PICS),
+        caption=script.START_TXT.format(message.from_user.mention, client.me.mention),
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 @Client.on_message(filters.command('api') & filters.private)
 async def shortener_api_handler(client, m: Message):
@@ -107,12 +85,20 @@ async def base_site_handler(client, m: Message):
         await update_user_info(user_id, {"base_site": base_site})
         await m.reply("<b>Base Site updated successfully.</b>")
 
-# MERGED: A single, complete callback handler for all buttons
+# SINGLE, COMPLETE callback handler for all buttons
 @Client.on_callback_query()
 async def cb_handler(client: Client, query: CallbackQuery):
     data = query.data
 
-    if data == "start":
+    # ADDED: Logic to handle the admin panel button press
+    if data == "admin_panel":
+        await query.answer()
+        await query.message.edit_text(
+            "**⚙️ Admin Power Panel**\n\nHere you can manage your bot's live settings.",
+            reply_markup=await build_main_panel()
+        )
+
+    elif data == "start":
         buttons = [[
             InlineKeyboardButton('💝 sᴜʙsᴄʀɪʙᴇ ᴍʏ ʏᴏᴜᴛᴜʙᴇ ᴄʜᴀɴɴᴇʟ', url='https://youtube.com/@Tech_VJ')
             ],[
@@ -125,7 +111,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
         if config.CLONE_MODE:
             buttons.append([InlineKeyboardButton('🤖 ᴄʀᴇᴀᴛᴇ ʏᴏᴜʀ ᴏᴡɴ ᴄʟᴏɴᴇ ʙᴏᴛ', callback_data='clone')])
         
-        # Add admin button if the user is an admin
         if query.from_user.id in config.ADMINS:
             buttons.append([InlineKeyboardButton("⚙️ Admin Power Panel", callback_data="admin_panel")])
             
@@ -173,3 +158,6 @@ async def cb_handler(client: Client, query: CallbackQuery):
 
     elif data == "close_data":
         await query.message.delete()
+
+    # Add your deep link and file access logic here if needed
+    # Make sure to use config.VARIABLE for all configuration values
