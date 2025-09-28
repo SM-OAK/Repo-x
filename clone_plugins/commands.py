@@ -1,7 +1,8 @@
-# clone_plugins/commands.py - Smart routing system
+# clone_plugins/commands.py - Smart routing system with custom message support
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pymongo import MongoClient
 import base64
 import asyncio
 
@@ -14,12 +15,24 @@ except:
 
 # Import config to check if this is main bot or clone
 try:
-    from config import BOT_USERNAME, LOG_CHANNEL, ADMINS
+    from config import BOT_USERNAME, LOG_CHANNEL, ADMINS, DB_URI
     MAIN_BOT_CONFIG = True
-except:
+    # Database Connection for clone settings
+    try:
+        mongo_client = MongoClient(DB_URI)
+        mongo_db = mongo_client["cloned_vjbotz"]
+        bots_collection = mongo_db["bots"]
+        CLONE_DB_AVAILABLE = True
+    except Exception as e:
+        print(f"Clone database connection failed: {e}")
+        CLONE_DB_AVAILABLE = False
+except Exception as e:
+    print(f"Config import failed: {e}")
     MAIN_BOT_CONFIG = False
+    CLONE_DB_AVAILABLE = False
 
-START_MESSAGE = """😊 **HEY** ,
+# Default messages
+DEFAULT_START_MESSAGE = """😊 **HEY** {mention},
 
 **I AM A PERMANENT FILE STORE BOT AND USERS CAN ACCESS STORED MESSAGES BY USING A SHAREABLE LINK GIVEN BY ME**
 
@@ -130,7 +143,101 @@ async def handle_file_access_clone(client: Client, message: Message, parameter: 
         print(f"Clone: Link decode error: {str(e)}")
         return False
 
+async def get_custom_start_message(bot_id):
+    """Get custom start message from database if available"""
+    if not CLONE_DB_AVAILABLE:
+        return DEFAULT_START_MESSAGE
+    
+    try:
+        clone_settings = bots_collection.find_one({"bot_id": bot_id})
+        if clone_settings and clone_settings.get("custom_start_message"):
+            return clone_settings["custom_start_message"]
+    except Exception as e:
+        print(f"Error fetching custom message: {e}")
+    
+    return DEFAULT_START_MESSAGE
 
+@Client.on_message(filters.command("start") & filters.private)
+async def smart_start_handler(client: Client, message: Message):
+    """Smart start command handler that routes properly and supports custom messages"""
+    
+    # Get bot info to determine if this is main bot or clone
+    try:
+        bot_info = await client.get_me()
+        is_main_bot = MAIN_BOT_CONFIG and bot_info.username == BOT_USERNAME.replace("@", "") if MAIN_BOT_CONFIG else False
+    except Exception as e:
+        print(f"Error getting bot info: {e}")
+        bot_info = None
+        is_main_bot = False
+    
+    # Check if there's a parameter
+    if len(message.command) > 1:
+        parameter = message.command[1]
+        
+        print(f"Start command received - Bot: {bot_info.username if bot_info else 'Unknown'}, Parameter: {parameter}")
+        print(f"Is main bot: {is_main_bot}")
+        print(f"Is file access: {is_file_access_request(parameter)}")
+        
+        # If it's a file access request
+        if is_file_access_request(parameter):
+            if is_main_bot:
+                # This is the main bot - let the main commands.py handle it
+                print("Main bot: Letting main commands.py handle file access")
+                return  # Don't handle here, let main commands.py take over
+            else:
+                # This is a clone bot - handle file access here
+                print("Clone bot: Handling file access")
+                success = await handle_file_access_clone(client, message, parameter)
+                if success:
+                    return
+                # If failed, continue to show start message
+        else:
+            # Not a file access request, but has parameter
+            if is_main_bot:
+                # Let main bot handle other parameters (BATCH-, verify-, etc.)
+                return
+    
+    # Regular start command (no parameter) or clone bot fallback
+    user_id = message.from_user.id
+    
+    # Add user to database if available
+    if DATABASE_AVAILABLE:
+        try:
+            await db.add_user(user_id)
+        except Exception as e:
+            print(f"Database error: {e}")
+    
+    # Get custom start message for this clone bot
+    start_message = DEFAULT_START_MESSAGE
+    if bot_info:
+        start_message = await get_custom_start_message(bot_info.id)
+    
+    # Format the message with user mention
+    try:
+        formatted_message = start_message.format(
+            mention=message.from_user.mention,
+            first_name=message.from_user.first_name,
+            user_id=message.from_user.id
+        )
+    except Exception as e:
+        print(f"Error formatting message: {e}")
+        formatted_message = start_message
+    
+    # Send start message
+    try:
+        await message.reply_text(
+            text=formatted_message,
+            reply_markup=get_start_keyboard(),
+            disable_web_page_preview=True
+        )
+    except Exception as e:
+        print(f"Error sending start message: {e}")
+        # Fallback message
+        await message.reply_text(
+            text=DEFAULT_START_MESSAGE.format(mention=message.from_user.mention),
+            reply_markup=get_start_keyboard(),
+            disable_web_page_preview=True
+        )
 
 @Client.on_callback_query(filters.regex(r"^(help_menu|about_menu|settings_menu|back_to_main|help_genlink|help_share|help_commands|about_dev|bot_stats|version_info)$"))
 async def clone_callback_handler(client: Client, callback_query: CallbackQuery):
@@ -157,69 +264,7 @@ async def clone_callback_handler(client: Client, callback_query: CallbackQuery):
                 [InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main")]
             ])
             
-            await callback_query.edi# clone_plugins/commands.py - Updated by Gemini with custom message logic
-
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pymongo import MongoClient
-import base64
-import asyncio
-import config
-
-# --- Database Connection ---
-# This provides a reliable connection to the database to fetch clone-specific settings.
-mongo_client = MongoClient(config.DB_URI)
-mongo_db = mongo_client["cloned_vjbotz"]
-bots_collection = mongo_db["bots"]
-
-# --- Default Text & Keyboards (from your original file) ---
-START_MESSAGE = """😊 **HEY** {mention},
-
-**I AM A PERMANENT FILE STORE BOT AND USERS CAN ACCESS STORED MESSAGES BY USING A SHAREABLE LINK GIVEN BY ME**
-
-**TO KNOW MORE CLICK HELP BUTTON.**"""
-
-def get_start_keyboard():
-    # ... (This function remains the same as in your file) ...
-# ... (All other keyboard and helper functions remain the same) ...
-
-# --- Main Logic ---
-
-@Client.on_message(filters.command("start") & filters.private)
-async def smart_start_handler(client: Client, message: Message):
-    """Smart start command handler that now uses custom messages"""
-    
-    bot_info = await client.get_me()
-    is_main_bot = config.MAIN_BOT_CONFIG and bot_info.username == config.BOT_USERNAME.replace("@", "")
-    
-    # Handle deep links first (file access, etc.)
-    if len(message.command) > 1:
-        # ... (Your existing deep link routing logic remains unchanged) ...
-        # This part of your code correctly handles file links for clones
-        # and passes other links to the main bot. No changes needed here.
-        pass
-
-    # --- Custom Start Message Logic ---
-    # Fetch this clone's specific settings from the database.
-    clone_settings = bots_collection.find_one({"bot_id": bot_info.id})
-    
-    # Use the custom message if it exists, otherwise use the default.
-    start_text = START_MESSAGE
-    if clone_settings and clone_settings.get("custom_start_message"):
-        start_text = clone_settings["custom_start_message"]
-        
-    # Send the final start message
-    await message.reply_text(
-        text=start_text.format(mention=message.from_user.mention),
-        reply_markup=get_start_keyboard(),
-        disable_web_page_preview=True
-    )
-
-# ... (The rest of your file, including handle_file_access_clone, 
-# clone_callback_handler, and clone_help_about, remains exactly the same as you provided) ...
-
-print("✅ Smart clone commands loaded - with custom message support!")
-t_message_text(about_text, reply_markup=keyboard)
+            await callback_query.edit_message_text(about_text, reply_markup=keyboard)
         
         elif data == "settings_menu":
             settings_text = """**⚙️ SETTINGS MENU**
@@ -239,8 +284,21 @@ This is a clone bot. Settings are managed by the bot owner.
             await callback_query.edit_message_text(settings_text, reply_markup=keyboard)
         
         elif data == "back_to_main":
+            # Get custom start message for callback
+            bot_info = await client.get_me()
+            start_message = await get_custom_start_message(bot_info.id)
+            
+            try:
+                formatted_message = start_message.format(
+                    mention=callback_query.from_user.mention,
+                    first_name=callback_query.from_user.first_name,
+                    user_id=callback_query.from_user.id
+                )
+            except:
+                formatted_message = start_message
+            
             await callback_query.edit_message_text(
-                START_MESSAGE,
+                formatted_message,
                 reply_markup=get_start_keyboard()
             )
         
@@ -287,31 +345,38 @@ Just send any file to generate a shareable link!"""
         
     except Exception as e:
         print(f"Callback error: {e}")
-        await callback_query.answer("Error occurred. Please try again.")
+        try:
+            await callback_query.answer("Error occurred. Please try again.")
+        except:
+            pass
 
 @Client.on_message(filters.command(["help", "about"]) & filters.private)
 async def clone_help_about(client: Client, message: Message):
     """Handle help and about commands for clone bots"""
-    command = message.command[0].lower()
-    
-    if command == "help":
-        await message.reply_text(
-            "**📚 HELP MENU**\n\nChoose what you need help with:",
-            reply_markup=get_help_keyboard()
-        )
-    elif command == "about":
-        about_text = """**📋 ABOUT THIS BOT**
+    try:
+        command = message.command[0].lower()
+        
+        if command == "help":
+            await message.reply_text(
+                "**📚 HELP MENU**\n\nChoose what you need help with:",
+                reply_markup=get_help_keyboard()
+            )
+        elif command == "about":
+            about_text = """**📋 ABOUT THIS BOT**
 
 🤖 **BOT TYPE** - File Store Clone Bot
 📝 **LANGUAGE** - Python
 📚 **LIBRARY** - Pyrofork  
 🗃️ **DATABASE** - MongoDB
 ♻️ **CLONED FROM** - VJ File Store Bot"""
-        
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ MAIN MENU", callback_data="back_to_main")]
-        ])
-        
-        await message.reply_text(about_text, reply_markup=keyboard)
+            
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("⬅️ MAIN MENU", callback_data="back_to_main")]
+            ])
+            
+            await message.reply_text(about_text, reply_markup=keyboard)
+    except Exception as e:
+        print(f"Help/About command error: {e}")
+        await message.reply_text("❌ An error occurred. Please try again.")
 
-print("✅ Smart clone commands loaded - conflict-free routing system!")
+print("✅ Smart clone commands loaded - conflict-free routing system with custom message support!")
