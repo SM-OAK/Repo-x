@@ -1,4 +1,5 @@
 # In plugins/commands.py, replace the existing start function with this one.
+from pyrogram import Client, filters, enums
 
 @Client.on_message(filters.command("start") & filters.incoming)
 async def start(client, message):
