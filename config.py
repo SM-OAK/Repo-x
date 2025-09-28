@@ -1,74 +1,90 @@
-# plugins/genlink.py - Updated by Gemini# plugins/genlink.py - Updated by Gemini
-# Fully compatible with the Power Panel and live settings.
 # Don't Remove Credit Tg - @VJ_Botz
+# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
+# Ask Doubt on telegram @KingVJ01
 
-import base64
-from pyrogram import Client, filters
-from pyrogram.types import Message
-import config # Import the whole config module
 
-# This function now reads the public mode setting live from the config module
-async def allowed(_, __, message):
-    if config.PUBLIC_FILE_STORE:
+import re
+import os
+from os import environ
+from Script import script
+
+id_pattern = re.compile(r'^.\d+$')
+def is_enabled(value, default):
+    if value.lower() in ["true", "yes", "1", "enable", "y"]:
         return True
-    if message.from_user and message.from_user.id in config.ADMINS:
-        return True
-    return False
+    elif value.lower() in ["false", "no", "0", "disable", "n"]:
+        return False
+    else:
+        return default
+      
+# Bot Information
+API_ID = int(environ.get("API_ID", "22321078"))
+API_HASH = environ.get("API_HASH", "9960806d290cf4170e43355fcc3687ac")
+BOT_TOKEN = environ.get("BOT_TOKEN", "8470211855:AAEcGaw7JlH4sHRuXS6L4BTC8rG9HkRJowQ")
 
-@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private & filters.create(allowed))
-async def incoming_gen_link(bot, message):
-    """Generate link for uploaded files"""
-    bot_id = (await bot.get_me()).id
-    # This check now reads the setting live from the config module
-    if not config.LINK_GENERATION_MODE and bot_id == config.OWNER_BOT_ID:
-        await message.reply("Link generation is currently disabled on the main management bot. Cloned bots are still active.")
-        return
+PICS = (environ.get('PICS', 'https://graph.org/file/ce1723991756e48c35aa1.jpg')).split() # Bot Start Picture
+ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '').split()]
+BOT_USERNAME = environ.get("BOT_USERNAME", "Svadvance2_bot") # without @
+PORT = environ.get("PORT", "8080")
 
-    username = (await bot.get_me()).username
-    post = await message.copy(config.LOG_CHANNEL)
-    file_id = str(post.id)
-    outstr = base64.urlsafe_b64encode(f"file_{file_id}".encode("ascii")).decode().strip("=")
-    user_id = message.from_user.id
-    user = await get_user(user_id)
+# Clone Info :-
+CLONE_MODE = bool(environ.get('CLONE_MODE', True)) # Set True or False
+
+# If Clone Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+CLONE_DB_URI = environ.get("CLONE_DB_URI", "mongodb+srv://clone:clone@cluster0.e5uszpi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+CDB_NAME = environ.get("CDB_NAME", "clonetechvj")
+
+# Database Information
+DB_URI = environ.get("DB_URI", "mongodb+srv://mysimplestats:simplestats@cluster0.uelokbe.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+DB_NAME = environ.get("DB_NAME", "techvjbotz")
+
+# Auto Delete Information
+AUTO_DELETE_MODE = bool(environ.get('AUTO_DELETE_MODE', True)) # Set True or False
+
+# If Auto Delete Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+AUTO_DELETE = int(environ.get("AUTO_DELETE", "30")) # Time in Minutes
+AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "1800")) # Time in Seconds
+
+# Channel Information
+LOG_CHANNEL = int(environ.get("LOG_CHANNEL", "-1002913585711"))
+CHANNEL_ID = int(environ.get("CHANNEL_ID", "-1002091966691"))
+
+# File Caption Information
+CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")
+BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION)
+
+# Enable - True or Disable - False
+PUBLIC_FILE_STORE = is_enabled((environ.get('PUBLIC_FILE_STORE', "True")), True)
+
+# Verify Info :-
+VERIFY_MODE = bool(environ.get('VERIFY_MODE', False)) # Set True or False
+
+# If Verify Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+SHORTLINK_URL = environ.get("SHORTLINK_URL", "") # shortlink domain without https://
+SHORTLINK_API = environ.get("SHORTLINK_API", "") # shortlink api
+VERIFY_TUTORIAL = environ.get("VERIFY_TUTORIAL", "") # how to open link 
+
+# Website Info:
+WEBSITE_URL_MODE = bool(environ.get('WEBSITE_URL_MODE', False)) # Set True or False
+
+# If Website Url Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+WEBSITE_URL = environ.get("WEBSITE_URL", "") # For More Information Check Video On Yt - @Tech_VJ
+
+# File Stream Config
+STREAM_MODE = bool(environ.get('STREAM_MODE', True)) # Set True or False
+
+# If Stream Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+MULTI_CLIENT = False
+SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
+PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))  # 20 minutes
+if 'DYNO' in environ:
+    ON_HEROKU = True
+else:
+    ON_HEROKU = False
+URL = environ.get("URL", "https://testofvjfilter-1fa60b1b8498.herokuapp.com/")
+
+
+# Don't Remove Credit Tg - @VJ_Botz
+# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
+# Ask Doubt on telegram @KingVJ01
     
-    if config.WEBSITE_URL_MODE:
-        share_link = f"{config.WEBSITE_URL}?start={outstr}"
-    else:
-        share_link = f"https://t.me/{username}?start={outstr}"
-        
-    if user.get("base_site") and user.get("shortener_api"):
-        short_link = await get_short_link(user, share_link)
-        await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🖇️ sʜᴏʀᴛ ʟɪɴᴋ :- {short_link}</b>")
-    else:
-        await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🔗 ᴏʀɪɢɪɴᴀʟ ʟɪɴᴋ :- {share_link}</b>")
-
-@Client.on_message(filters.command(['link']) & filters.create(allowed))
-async def gen_link_s(bot, message):
-    """Generate link for replied message"""
-    bot_id = (await bot.get_me()).id
-    # This check now reads the setting live from the config module
-    if not config.LINK_GENERATION_MODE and bot_id == config.OWNER_BOT_ID:
-        await message.reply("Link generation is currently disabled on the main management bot. Cloned bots are still active.")
-        return
-
-    username = (await bot.get_me()).username
-    replied = message.reply_to_message
-    if not replied or not replied.media:
-        return await message.reply('Reply to a message containing a file to get a shareable link.')
-    
-    post = await replied.copy(config.LOG_CHANNEL)
-    file_id = str(post.id)
-    outstr = base64.urlsafe_b64encode(f"file_{file_id}".encode("ascii")).decode().strip("=")
-    user_id = message.from_user.id
-    user = await get_user(user_id)
-    
-    if config.WEBSITE_URL_MODE:
-        share_link = f"{config.WEBSITE_URL}?start={outstr}"
-    else:
-        share_link = f"https://t.me/{username}?start={outstr}"
-        
-    if user.get("base_site") and user.get("shortener_api"):
-        short_link = await get_short_link(user, share_link)
-        await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🖇️ sʜᴏʀᴛ ʟɪɴᴋ :- {short_link}</b>")
-    else:
-        await message.reply(f"<b>⭕ ʜᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n🔗 ᴏʀɪɢɪɴᴀʟ ʟɪɴᴋ :- {share_link}</b>")
