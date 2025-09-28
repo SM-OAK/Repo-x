@@ -1,9 +1,7 @@
-# clone_plugins/commands.py - Final Fixed Version for Pyrofork
+# clone_plugins/commands.py - Fixed to avoid conflicts with main bot
 
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-
-# NO problematic imports - completely clean
 import asyncio
 
 # Database import (optional)
@@ -13,7 +11,7 @@ try:
 except:
     DATABASE_AVAILABLE = False
 
-# Welcome message exactly like your screenshot
+# Welcome message for clone bots
 START_MESSAGE = """😊 **HEY** ,
 
 **I AM A PERMANENT FILE STORE BOT AND USERS CAN ACCESS STORED MESSAGES BY USING A SHAREABLE LINK GIVEN BY ME**
@@ -62,29 +60,37 @@ def get_about_keyboard():
         [InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main")]
     ])
 
+# CRITICAL: This filter ensures this only runs for clone bots, not main bot
 @Client.on_message(filters.command("start") & filters.private)
 async def clone_start_command(client: Client, message: Message):
-    user_id = message.from_user.id
+    # IMPORTANT: Skip if this is a file access request - let genlink handle it
+    if len(message.command) > 1:
+        parameter = message.command[1]
+        # If it starts with file_, BATCH-, or any encoded format, skip it
+        if (parameter.startswith("file_") or 
+            parameter.startswith("BATCH-") or 
+            parameter.startswith("verify-") or
+            len(parameter) > 10):  # Likely an encoded file ID
+            print(f"Clone: Skipping file access request: {parameter}")
+            return  # Let the main bot or genlink handle this
     
-    # Skip if it's a file access request (handled by genlink)
-    if len(message.command) > 1 and message.command[1].startswith("file_"):
-        return
+    user_id = message.from_user.id
     
     # Add user to database if available
     if DATABASE_AVAILABLE:
         try:
             await db.add_user(user_id)
         except Exception as e:
-            print(f"Database error: {e}")
+            print(f"Clone database error: {e}")
     
-    # Send start message
+    # Send clone bot start message
     await message.reply_text(
         text=START_MESSAGE,
         reply_markup=get_start_keyboard(),
         disable_web_page_preview=True
     )
 
-@Client.on_callback_query()
+@Client.on_callback_query(filters.regex(r"^(help_menu|about_menu|settings_menu|back_to_main|premium_plan|link_shortner|token_verification|custom_caption|custom_force_sub|custom_button|auto_delete|permanent_link|protect_content|stream_download|help_genlink|help_share|help_commands|about_dev|bot_stats|version_info)$"))
 async def clone_callback_handler(client: Client, callback_query: CallbackQuery):
     data = callback_query.data
     
@@ -218,7 +224,7 @@ async def clone_callback_handler(client: Client, callback_query: CallbackQuery):
             await callback_query.edit_message_text(version_text, reply_markup=get_about_keyboard())
         
     except Exception as e:
-        print(f"Callback error: {e}")
+        print(f"Clone callback error: {e}")
         try:
             await callback_query.answer("Error occurred. Please try again.")
         except:
@@ -244,4 +250,4 @@ async def clone_about_command(client: Client, message: Message):
     
     await message.reply_text(about_text, reply_markup=get_about_keyboard())
 
-print("✅ Clone commands loaded successfully!")
+print("✅ Clone commands loaded (conflict-free version)!")
