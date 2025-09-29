@@ -34,7 +34,7 @@ from TechVJ.bot.clients import initialize_clients
 
 # Safe import with fallback for restart_bots
 try:
-    from plugins.clone import restart_bots
+    from plugins.clone_manager import restart_bots
 except ImportError:
     print("⚠️ plugins.clone not found, using built-in restart function")
     # Built-in restart function
