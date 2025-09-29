@@ -169,4 +169,4 @@ async def confirm_delete_clone(client, query: CallbackQuery):
         return await query.answer("Access denied!", show_alert=True)
     
     await clone_db.delete_clone_by_id(bot_id)
-    await query.message.edit_text("✅ Cʟᴏɴᴇ ᴅᴇʟᴇᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!")￼Enter
+    await query.message.edit_text("✅ Cʟᴏɴᴇ ᴅᴇʟᴇᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!")
