@@ -1,18 +1,35 @@
-pyrofork==2.3.45
-pyrogram>=2.0.0
-Tgcrypto
+# Core libraries
+pyrofork==2.3.45        # Pyrofork (Pyrogram fork with .ask support)
+pyrogram>=2.0.0         # Keep for compatibility (but pyrofork is primary)
+TgCrypto                # Required for encryption
+
+# Async + networking
 asyncio
 aiohttp
-pymongo[srv]==3.12.3
-motor
+
+# Database
+pymongo[srv]==3.12.3    # MongoDB driver with SRV support
+motor                   # Async MongoDB driver (required for clone_db & database.py)
+
+# Validation + schema
 marshmallow==3.14.1
 umongo==3.0.1
 validators
+
+# HTTP / Scraping
 requests
 bs4
+
+# Timezones
 pytz
+
+# Shortener
 shortzy
+
+# Environment handling
 python-dotenv
+
+# Web server (Heroku / Render deployment)
 Flask==1.1.2
 gunicorn==20.1.0
 Jinja2==3.0.3
