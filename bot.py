@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from pyrofork import Client, idle   # ✅ use pyrofork, not pyrogram
+from pyrofork import Client, idle   # ✅ correct import, no extra comment!
 from config import API_ID, API_HASH, BOT_TOKEN, BOT_USERNAME
 from clone_manager import restart_bots
 
