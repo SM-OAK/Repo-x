@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from pyrofork import Client, idle  
+from pyrogram import Client, idle   # back to pyrogram
 from config import API_ID, API_HASH, BOT_TOKEN, BOT_USERNAME
 from clone_manager import restart_bots
 
@@ -10,7 +10,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Main bot client
 app = Client(
     "main_bot",
     api_id=API_ID,
@@ -24,10 +23,9 @@ async def main():
         await app.start()
         logger.info(f"✅ Bot started as @{BOT_USERNAME}")
 
-        # Restart all clone bots from DB
         await restart_bots()
-
         logger.info("✅ All clone bots restarted")
+
         await idle()
 
     except Exception as e:
