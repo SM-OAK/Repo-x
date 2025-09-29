@@ -3,18 +3,18 @@ from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from config import ADMINS, PICS
 from Script import script
-from database.database import db
-import logging
+from database.database import db  # Your DB module for user management
 
-logger = logging.getLogger(__name__)
-
-# Message handler for /start
-@Client.on_message(filters.command("start") & filters.private)
+# Main /start handler (group=2 so clone bot handlers run before this)
+@Client.on_message(filters.command("start") & filters.private, group=2)
 async def start(client, message):
     user_id = message.from_user.id
+    
+    # Add user to DB if not exists
     if not await db.is_user_exist(user_id):
         await db.add_user(user_id, message.from_user.first_name)
-
+    
+    # Admin buttons
     if user_id in ADMINS:
         buttons = [
             [
@@ -29,6 +29,8 @@ async def start(client, message):
             caption=script.ADMIN_START.format(message.from_user.mention),
             reply_markup=InlineKeyboardMarkup(buttons)
         )
+    
+    # Regular user buttons
     else:
         buttons = [
             [
@@ -45,24 +47,27 @@ async def start(client, message):
         )
 
 
-# Message handlers for /help and /about (optional, but good for direct commands)
-@Client.on_message(filters.command("help") & filters.private)
+# /help command handler
+@Client.on_message(filters.command("help") & filters.private, group=2)
 async def help_command(client, message):
     buttons = [[InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='start')]]
     await message.reply_text(script.HELP_TXT, reply_markup=InlineKeyboardMarkup(buttons))
 
-@Client.on_message(filters.command("about") & filters.private)
+
+# /about command handler
+@Client.on_message(filters.command("about") & filters.private, group=2)
 async def about_command(client, message):
     buttons = [[InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='start')]]
     await message.reply_text(script.ABOUT_TXT, reply_markup=InlineKeyboardMarkup(buttons))
 
 
-# Now add callback query handlers for inline buttons (important!)
+# Callback query for buttons
 @Client.on_callback_query(filters.regex("^start$"))
 async def start_callback(client, query: CallbackQuery):
+    await query.answer()  # Remove loading spinner
+    
     user_id = query.from_user.id
-    await query.answer()  # answer callback query to remove loading spinner
-
+    
     if user_id in ADMINS:
         buttons = [
             [
