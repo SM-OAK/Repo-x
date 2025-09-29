@@ -1,5 +1,6 @@
 import asyncio
-from pyrofork.types import InlineKeyboardMarkup, InlineKeyboardButton  # ✅ switched to pyrofork
+from pyrogram import Client
+from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from config import LOG_CHANNEL, AUTO_DELETE_MODE, AUTO_DELETE, AUTO_DELETE_TIME, STREAM_MODE, URL
 from urllib.parse import quote_plus
 from Script import script
@@ -37,8 +38,8 @@ def get_hash(msg):
     """Generate hash for streaming"""
     return str(abs(hash(str(msg.id))))
 
-async def get_file_details(client, file_id):
-    """Get file from log channel"""
+async def get_file_details(client: Client, file_id: int):
+    """Get file message from log channel"""
     try:
         msg = await client.get_messages(LOG_CHANNEL, int(file_id))
         return msg
@@ -46,10 +47,9 @@ async def get_file_details(client, file_id):
         logger.error(f"Error getting file: {e}")
         return None
 
-async def send_file(client, message, file_id):
-    """Send file to user with auto-delete if enabled"""
+async def send_file(client: Client, message, file_id: int):
+    """Send file to user with streaming buttons and auto-delete"""
     try:
-        # Get file from log channel
         msg = await client.get_messages(LOG_CHANNEL, file_id)
         if not msg:
             return await message.reply("❌ File not found!")
@@ -58,22 +58,20 @@ async def send_file(client, message, file_id):
 
         # Prepare caption
         try:
-            media = getattr(msg, msg.media.value)
+            media_attr = getattr(msg, msg.media.value)
             file_name = format_file_name(get_file_name(msg))
-            file_size = get_size(media.file_size) if hasattr(media, 'file_size') else "Unknown"
-
+            file_size = get_size(media_attr.file_size) if hasattr(media_attr, 'file_size') else "Unknown"
             caption = script.CAPTION.format(file_name=file_name, file_size=file_size)
         except Exception as e:
             logger.error(f"Error preparing caption: {e}")
             caption = "<b>📁 Your File</b>"
 
-        # Create buttons for streaming if enabled
+        # Create streaming buttons if enabled
         reply_markup = None
         if STREAM_MODE and (msg.video or msg.document):
             try:
                 stream_url = f"{URL}watch/{file_id}/{quote_plus(get_file_name(msg))}?hash={get_hash(msg)}"
                 download_url = f"{URL}{file_id}/{quote_plus(get_file_name(msg))}?hash={get_hash(msg)}"
-
                 buttons = [[
                     InlineKeyboardButton("⬇️ Download", url=download_url),
                     InlineKeyboardButton("▶️ Watch", url=stream_url)
@@ -82,14 +80,14 @@ async def send_file(client, message, file_id):
             except Exception as e:
                 logger.error(f"Error creating stream buttons: {e}")
 
-        # Send file
+        # Send the file
         sent_msg = await msg.copy(
             chat_id=message.from_user.id,
             caption=caption,
             reply_markup=reply_markup
         )
 
-        # Auto delete if enabled
+        # Auto-delete if enabled
         if AUTO_DELETE_MODE:
             try:
                 warning = await message.reply(
