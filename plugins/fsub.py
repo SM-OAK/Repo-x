@@ -20,10 +20,20 @@ async def handle_force_sub(client, message):
     except UserNotParticipant:
         try:
             invite_link = await client.create_chat_invite_link(FORCE_SUB_CHANNEL)
+            
+            # Get bot username
+            bot_username = (await client.get_me()).username
+            
+            # Build try again URL
+            if len(message.command) > 1:
+                try_again_url = f"https://t.me/{bot_username}?start={message.command[1]}"
+            else:
+                try_again_url = f"https://t.me/{bot_username}"
+            
             buttons = [[
                 InlineKeyboardButton("🔔 Jᴏɪɴ Cʜᴀɴɴᴇʟ", url=invite_link.invite_link)
             ], [
-                InlineKeyboardButton("🔄 Tʀʏ Aɢᴀɪɴ", url=f"https://t.me/{client.me.username}?start={message.command[1]}")
+                InlineKeyboardButton("🔄 Tʀʏ Aɢᴀɪɴ", url=try_again_url)
             ]]
             
             await message.reply_text(
