@@ -1,5 +1,5 @@
 import motor.motor_asyncio
-from config import DB_URI
+from config import CLONE_DB_URI
 from datetime import datetime
 
 class CloneDatabase:
@@ -69,7 +69,7 @@ class CloneDatabase:
     
     async def get_clone_users_count(self, bot_id):
         """Get user count for specific clone"""
-        # This would need a separate users collection per clone
+        # Future: maintain per-clone user collections
         return 0
     
     async def toggle_clone_status(self, bot_id, status):
@@ -80,4 +80,5 @@ class CloneDatabase:
         )
         return True
 
-clone_db = CloneDatabase(DB_URI)
+# ✅ Use CLONE_DB_URI instead of DB_URI
+clone_db = CloneDatabase(CLONE_DB_URI)
