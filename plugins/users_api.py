@@ -7,7 +7,7 @@
 import requests
 import json
 from motor.motor_asyncio import AsyncIOMotorClient
-from plugins.clone import mongo_db
+from plugins.clone_manager import mongo_db
 
 # Don't Remove Credit Tg - @VJ_Botz
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
