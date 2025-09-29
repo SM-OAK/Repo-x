@@ -17,7 +17,7 @@ logging.getLogger("pyrogram").setLevel(logging.ERROR)
 
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
-from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT
+from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT, API_ID, API_HASH, DB_URI
 from typing import Union, Optional, AsyncGenerator
 from pyrogram import types
 from Script import script 
@@ -28,10 +28,58 @@ from TechVJ.server import web_server
 
 import asyncio
 from pyrogram import idle
-from plugins.clone import restart_bots
 from TechVJ.bot import StreamBot
 from TechVJ.utils.keepalive import ping_server
 from TechVJ.bot.clients import initialize_clients
+
+# Safe import with fallback for restart_bots
+try:
+    from plugins.clone import restart_bots
+except ImportError:
+    print("⚠️ plugins.clone not found, using built-in restart function")
+    # Built-in restart function
+    async def restart_bots():
+        """Restart all existing clone bots from database"""
+        try:
+            from pymongo import MongoClient
+            
+            mongo_client = MongoClient(DB_URI)
+            mongo_db = mongo_client["cloned_vjbotz"]
+            
+            bots = list(mongo_db.bots.find())
+            
+            if not bots:
+                print("No clones to restart")
+                return
+            
+            print(f"Found {len(bots)} clone(s) to restart...")
+            
+            for bot in bots:
+                bot_token = bot.get('token')
+                bot_username = bot.get('username', 'unknown')
+                
+                if not bot_token:
+                    continue
+                
+                try:
+                    clone_client = Client(
+                        f"clone_{bot_token[:8]}",
+                        API_ID,
+                        API_HASH,
+                        bot_token=bot_token,
+                        plugins={"root": "clone_plugins"}
+                    )
+                    
+                    await clone_client.start()
+                    print(f"  ✅ Restarted clone: @{bot_username}")
+                    
+                except Exception as e:
+                    print(f"  ❌ Failed to restart @{bot_username}: {e}")
+            
+            print("Clone restart process completed")
+            
+        except Exception as e:
+            print(f"Error in restart_bots: {e}")
 
 # Load main bot plugins
 ppath = "plugins/*.py"
@@ -115,7 +163,10 @@ async def start():
     # Restart existing clone bots if enabled
     if CLONE_MODE:
         print("\n🔄 Restarting existing clone bots...")
-        await restart_bots()
+        try:
+            await restart_bots()
+        except Exception as e:
+            print(f"❌ Error restarting clones: {e}")
     
     print("\n✅ Bot Started Successfully!")
     print(f"👤 Bot Username: @{me.username}")
