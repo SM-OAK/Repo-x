@@ -1,8 +1,8 @@
 import logging
 import asyncio
-from pyrogram import Client, idle   # back to pyrogram
+from pyrogram import Client, idle
 from config import API_ID, API_HASH, BOT_TOKEN, BOT_USERNAME
-from clone_manager import restart_bots
+from plugins.clone_manager import restart_bots # <-- Corrected import path
 
 logging.basicConfig(
     level=logging.INFO,
