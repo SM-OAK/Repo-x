@@ -6,16 +6,16 @@ import sys
 try:
     from config import API_ID, API_HASH, BOT_TOKEN, BOT_USERNAME
 except ImportError:
-    print("FATAL: config.py not found. Please check your configuration.")
+    print("❌ FATAL: config.py not found. Please check your configuration.")
     sys.exit(1)
 
 # --- Library Import ---
-# We are now using the official pyrogram library
 try:
     from pyrogram import Client, idle
     from pyrogram.errors import AuthKeyUnregistered, UserDeactivated
 except ImportError:
-    print("FATAL: pyrogram is not installed. Please run: python3 -m pip install -U pyrogram TgCrypto")
+    print("❌ FATAL: Pyrogram is not installed.")
+    print("👉 Run: python3 -m pip install -U pyrogram TgCrypto")
     sys.exit(1)
 
 # --- Logging Setup ---
@@ -24,50 +24,74 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 logging.getLogger("pyrogram").setLevel(logging.WARNING)
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("MainBot")
 
 # --- Main Bot Application ---
-# Re-added the 'plugins' argument, which is correct for the official pyrogram library
 app = Client(
     "main_bot",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
+    api_id=int(API_ID) if API_ID else 0,
+    api_hash=str(API_HASH),
+    bot_token=str(BOT_TOKEN),
     plugins={"root": "plugins"}
 )
 
 async def main():
-    """Main function to start the bot and handle startup errors."""
-    logger.info("--- Attempting to start bot using Pyrogram ---")
+    """Main entrypoint: start bot, load plugins, handle errors."""
+    logger.info("🚀 Attempting to start bot with Pyrogram...")
+
+    # --- Config sanity check ---
+    if not API_ID or not API_HASH or not BOT_TOKEN:
+        logger.critical("❌ Missing essential configuration (API_ID/API_HASH/BOT_TOKEN).")
+        sys.exit(1)
 
     try:
         await app.start()
-        bot_info = await app.get_me()
-        logger.info(f"✅ Bot logged in as @{bot_info.username} (ID: {bot_info.id})")
+        me = await app.get_me()
+        logger.info(f"✅ Bot logged in as @{me.username} (ID: {me.id})")
+
+        # --- Try restarting clones (if available) ---
+        try:
+            from clone_manager import restart_bots
+            logger.info("🔄 Restarting clone bots...")
+            await restart_bots()
+            logger.info("✅ Clone bots restarted.")
+        except ImportError:
+            logger.warning("⚠️ clone_manager.py not found. Skipping clone restarts.")
+        except Exception as e:
+            logger.error(f"Clone restart failed: {e}", exc_info=True)
+
+        logger.info("✅ All plugins loaded. Bot is now running...")
+        await idle()
 
     except AuthKeyUnregistered:
-        logger.critical("CRITICAL ERROR: AUTH_KEY_UNREGISTERED")
-        logger.critical("Your BOT_TOKEN is invalid. Get a new one from @BotFather and delete main_bot.session")
+        logger.critical("❌ AUTH_KEY_UNREGISTERED: Invalid BOT_TOKEN.")
+        logger.critical("👉 Get a new token from @BotFather and delete main_bot.session")
         sys.exit(1)
     except UserDeactivated:
-        logger.critical("CRITICAL ERROR: USER_DEACTIVATED")
-        logger.critical("The bot account has been deleted. Create a new bot on @BotFather.")
+        logger.critical("❌ USER_DEACTIVATED: Bot account deleted.")
+        logger.critical("👉 Create a new bot via @BotFather.")
         sys.exit(1)
     except Exception as e:
-        logger.critical(f"--- BOT FAILED TO START: {type(e).__name__} ---")
-        logger.critical(e)
+        logger.critical(f"❌ BOT FAILED TO START: {type(e).__name__}")
+        logger.critical(str(e))
         sys.exit(1)
 
-    logger.info("✅ Bot started successfully with all plugins loaded. Running idle...")
-    await idle()
-    
-    logger.info("--- Bot is stopping ---")
-    await app.stop()
-    logger.info("❌ Bot stopped.")
+    finally:
+        logger.info("🛑 Stopping bot...")
+        try:
+            await app.stop()
+            logger.info("❌ Bot stopped successfully.")
+        except Exception as e:
+            logger.error(f"Error during shutdown: {e}", exc_info=True)
+
 
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        logger.info("Process interrupted by user.")
-
+        logger.info("🛑 Process interrupted by user (Ctrl+C). Exiting...")
+    except RuntimeError as e:
+        # Fix for environments where asyncio.run() isn't supported
+        logger.warning(f"RuntimeError: {e} — using loop.run_until_complete() fallback.")
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
