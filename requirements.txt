@@ -1,9 +1,10 @@
 pyrofork==2.3.45
+pyrogram>=2.0.0
 Tgcrypto
 asyncio
 aiohttp
 pymongo[srv]==3.12.3
-motor==2.5.1
+motor
 marshmallow==3.14.1
 umongo==3.0.1
 validators
@@ -11,7 +12,7 @@ requests
 bs4
 pytz
 shortzy
-python-dotenv==0.21.1
+python-dotenv
 Flask==1.1.2
 gunicorn==20.1.0
 Jinja2==3.0.3
