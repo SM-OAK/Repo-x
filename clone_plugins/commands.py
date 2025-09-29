@@ -1,305 +1,234 @@
- # clone_plugins/commands.py - Smart routing system
-
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 import base64
 import asyncio
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-# Database import (optional)
+# Try to import from config - fallback gracefully
 try:
-    from database.database import db
-    DATABASE_AVAILABLE = True
+    from config import LOG_CHANNEL, ADMINS, AUTO_DELETE_MODE, AUTO_DELETE_TIME
+    CONFIG_LOADED = True
 except:
-    DATABASE_AVAILABLE = False
+    LOG_CHANNEL = None
+    ADMINS = []
+    AUTO_DELETE_MODE = False
+    AUTO_DELETE_TIME = 1800
+    CONFIG_LOADED = False
 
-# Import config to check if this is main bot or clone
+# Try to import database - fallback gracefully
 try:
-    from config import BOT_USERNAME, LOG_CHANNEL, ADMINS
-    MAIN_BOT_CONFIG = True
+    from database.clone_db import clone_db
+    DB_LOADED = True
 except:
-    MAIN_BOT_CONFIG = False
+    DB_LOADED = False
 
-START_MESSAGE = """😊 **HEY** ,
+START_TEXT = """<b>Hᴇʟʟᴏ {} ✨
 
-**I AM A PERMANENT FILE STORE BOT AND USERS CAN ACCESS STORED MESSAGES BY USING A SHAREABLE LINK GIVEN BY ME**
+I ᴀᴍ ᴀ ᴘᴇʀᴍᴀɴᴇɴᴛ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ ᴀɴᴅ ᴜsᴇʀs ᴄᴀɴ ᴀᴄᴄᴇss sᴛᴏʀᴇᴅ ᴍᴇssᴀɢᴇs ʙʏ ᴜsɪɴɢ ᴀ sʜᴀʀᴇᴀʙʟᴇ ʟɪɴᴋ ɢɪᴠᴇɴ ʙʏ ᴍᴇ.
 
-**TO KNOW MORE CLICK HELP BUTTON.**"""
+Tᴏ ᴋɴᴏᴡ ᴍᴏʀᴇ ᴄʟɪᴄᴋ ʜᴇʟᴘ ʙᴜᴛᴛᴏɴ.</b>"""
+
+HELP_TEXT = """<b>📚 Hᴇʟᴘ Mᴇɴᴜ
+
+🔹 Sᴇɴᴅ ᴍᴇ ᴀɴʏ ғɪʟᴇ/ᴠɪᴅᴇᴏ
+🔹 I ᴡɪʟʟ ɢɪᴠᴇ ʏᴏᴜ ᴀ sʜᴀʀᴇᴀʙʟᴇ ʟɪɴᴋ
+🔹 Usᴇʀs ᴄᴀɴ ᴀᴄᴄᴇss ғɪʟᴇs ғʀᴏᴍ ᴛʜᴇ ʟɪɴᴋ
+
+💡 Jᴜsᴛ sᴇɴᴅ ᴍᴇ ᴀɴʏ ғɪʟᴇ!</b>"""
+
+ABOUT_TEXT = """<b>━━━━━━━━━━━━━━━━━━━
+◈ Mʏ Nᴀᴍᴇ: Fɪʟᴇ Sᴛᴏʀᴇ Cʟᴏɴᴇ
+◈ Cʀᴇᴀᴛᴏʀ: @VJ_Botz
+◈ Lɪʙʀᴀʀʏ: Pʏʀᴏɢʀᴀᴍ
+◈ Lᴀɴɢᴜᴀɢᴇ: Pʏᴛʜᴏɴ 3
+━━━━━━━━━━━━━━━━━━━</b>"""
 
 def get_start_keyboard():
+    """Get keyboard for start message"""
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("👑 HELP", callback_data="help_menu"),
-            InlineKeyboardButton("📋 ABOUT", callback_data="about_menu")
-        ],
-        [
-            InlineKeyboardButton("⚙️ SETTINGS ⚙️", callback_data="settings_menu")
+            InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='clone_help'),
+            InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='clone_about')
         ]
     ])
 
-def get_help_keyboard():
-    return InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔗 How to Generate Links", callback_data="help_genlink")],
-        [InlineKeyboardButton("📤 How to Share Files", callback_data="help_share")],
-        [InlineKeyboardButton("⚙️ Bot Commands", callback_data="help_commands")],
-        [InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main")]
-    ])
-
-def is_file_access_request(parameter):
-    """Check if this is a file access request"""
-    if not parameter:
-        return False
-    
-    # Direct file_ prefix
-    if parameter.startswith("file_"):
-        return True
-    
-    # Base64 encoded file access
+async def decode_file_id(data):
+    """Decode file ID from various formats"""
     try:
-        # Try to decode as base64
-        decoded = base64.urlsafe_b64decode(parameter + "=" * (-len(parameter) % 4)).decode("ascii")
-        if "file_" in decoded or "_" in decoded:
-            return True
-    except:
-        pass
+        # Format 1: file_123
+        if data.startswith("file_"):
+            return int(data[5:])
+        
+        # Format 2: Base64 encoded
+        decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
+        
+        # Format 2a: file_123 encoded
+        if decoded.startswith("file_"):
+            return int(decoded[5:])
+        
+        # Format 2b: prefix_123
+        if "_" in decoded:
+            _, file_id = decoded.split("_", 1)
+            return int(file_id)
+        
+        # Format 3: Direct number
+        return int(decoded)
     
-    # Other known non-file patterns
-    if (parameter.startswith("BATCH-") or 
-        parameter.startswith("verify-") or
-        parameter in ["help", "about", "settings"]):
-        return False
-    
-    # If it's long and encoded, likely a file
-    if len(parameter) > 15:
-        return True
-    
-    return False
-
-async def handle_file_access_clone(client: Client, message: Message, parameter: str):
-    """Handle file access for clone bots"""
-    try:
-        # Try to decode the file ID
-        if parameter.startswith("file_"):
-            encoded_id = parameter.replace("file_", "")
-        else:
-            # Handle base64 encoded format
-            decoded_data = base64.urlsafe_b64decode(parameter + "=" * (-len(parameter) % 4)).decode("ascii")
-            if "_" in decoded_data:
-                pre, file_id = decoded_data.split("_", 1)
-                encoded_id = base64.urlsafe_b64encode(f"file_{file_id}".encode("ascii")).decode().strip("=")
-            else:
-                encoded_id = parameter
-        
-        # Decode the file ID
-        decoded_string = base64.urlsafe_b64decode(encoded_id + "=" * (-len(encoded_id) % 4)).decode("ascii")
-        
-        if decoded_string.startswith("file_"):
-            file_id = int(decoded_string[5:])
-        else:
-            file_id = int(decoded_string)
-        
-        print(f"Clone: Trying to access file ID {file_id}")
-        
-        # Send loading message
-        loading_msg = await message.reply_text("🔄 **Fetching your file...**")
-        
-        try:
-            # For clone bots, try to get from LOG_CHANNEL (if available)
-            if MAIN_BOT_CONFIG and LOG_CHANNEL:
-                file_msg = await client.get_messages(LOG_CHANNEL, file_id)
-                
-                if file_msg and file_msg.media:
-                    await file_msg.copy(chat_id=message.from_user.id, protect_content=False)
-                    await loading_msg.delete()
-                    await message.reply_text("✅ **File delivered successfully!**")
-                    print(f"Clone: File {file_id} delivered to user {message.from_user.id}")
-                    return True
-                else:
-                    await loading_msg.edit_text("❌ **File not found in storage**")
-                    return False
-            else:
-                await loading_msg.edit_text("❌ **File storage not configured for clone bot**")
-                return False
-                
-        except Exception as e:
-            await loading_msg.edit_text(f"❌ **Cannot access file**\n\n**Error:** `{str(e)}`")
-            print(f"Clone: Error accessing file {file_id}: {str(e)}")
-            return False
-            
     except Exception as e:
-        await message.reply_text(f"❌ **Invalid link format**\n\n**Error:** `{str(e)}`")
-        print(f"Clone: Link decode error: {str(e)}")
+        print(f"Clone: Decode error - {e}")
+        return None
+
+async def send_file_to_user(client, message, file_id):
+    """Retrieve and send file to user"""
+    if not LOG_CHANNEL:
+        return False
+    
+    try:
+        # Get file from log channel
+        file_msg = await client.get_messages(LOG_CHANNEL, file_id)
+        
+        if not file_msg or not file_msg.media:
+            await message.reply("<b>❌ Fɪʟᴇ ɴᴏᴛ ғᴏᴜɴᴅ!</b>")
+            return False
+        
+        # Send file to user
+        sent_msg = await file_msg.copy(
+            chat_id=message.from_user.id,
+            caption=file_msg.caption
+        )
+        
+        # Auto-delete if enabled
+        if AUTO_DELETE_MODE:
+            warning = await message.reply(
+                f"<b>⚠️ IMPORTANT</b>\n\n"
+                f"This file will be deleted in <b>{AUTO_DELETE_TIME // 60} minutes</b>.\n"
+                f"Please forward to Saved Messages!"
+            )
+            
+            await asyncio.sleep(AUTO_DELETE_TIME)
+            
+            try:
+                await sent_msg.delete()
+                await warning.edit_text("✅ File deleted!")
+            except:
+                pass
+        
+        return True
+        
+    except Exception as e:
+        print(f"Clone: Error sending file - {e}")
+        await message.reply(f"<b>❌ Eʀʀᴏʀ: {str(e)}</b>")
         return False
 
-@Client.on_message(filters.command("start") & filters.private)
-async def smart_start_handler(client: Client, message: Message):
-    """Smart start command handler that routes properly"""
-    
-    # Get bot info to determine if this is main bot or clone
-    bot_info = await client.get_me()
-    is_main_bot = MAIN_BOT_CONFIG and bot_info.username == BOT_USERNAME.replace("@", "") if MAIN_BOT_CONFIG else False
+# PRIORITY: Clone bot only handles if main bot doesn't
+@Client.on_message(filters.command("start") & filters.private, group=1)
+async def clone_start(client, message):
+    """Clone bot start handler - runs with lower priority"""
     
     # Check if there's a parameter
     if len(message.command) > 1:
         parameter = message.command[1]
         
-        print(f"Start command received - Bot: {bot_info.username}, Parameter: {parameter}")
-        print(f"Is main bot: {is_main_bot}")
-        print(f"Is file access: {is_file_access_request(parameter)}")
+        # Try to decode as file access
+        file_id = await decode_file_id(parameter)
         
-        # If it's a file access request
-        if is_file_access_request(parameter):
-            if is_main_bot:
-                # This is the main bot - let the main commands.py handle it
-                print("Main bot: Letting main commands.py handle file access")
-                return  # Don't handle here, let main commands.py take over
+        if file_id:
+            print(f"Clone: Handling file access for ID {file_id}")
+            
+            # Show loading
+            loading = await message.reply("<b>🔄 Fᴇᴛᴄʜɪɴɢ ғɪʟᴇ...</b>")
+            
+            # Send file
+            success = await send_file_to_user(client, message, file_id)
+            
+            # Delete loading message
+            try:
+                await loading.delete()
+            except:
+                pass
+            
+            if success:
+                return  # Successfully handled
             else:
-                # This is a clone bot - handle file access here
-                print("Clone bot: Handling file access")
-                success = await handle_file_access_clone(client, message, parameter)
-                if success:
-                    return
-                # If failed, continue to show start message
+                # Fall through to show start message
+                pass
         else:
-            # Not a file access request, but has parameter
-            if is_main_bot:
-                # Let main bot handle other parameters (BATCH-, verify-, etc.)
-                return
+            # Invalid parameter - show start message
+            print(f"Clone: Invalid parameter - {parameter}")
     
-    # Regular start command (no parameter) or clone bot fallback
-    user_id = message.from_user.id
-    
-    # Add user to database if available
-    if DATABASE_AVAILABLE:
-        try:
-            await db.add_user(user_id)
-        except Exception as e:
-            print(f"Database error: {e}")
-    
-    # Send start message
-    await message.reply_text(
-        text=START_MESSAGE,
-        reply_markup=get_start_keyboard(),
-        disable_web_page_preview=True
+    # Regular start message
+    await message.reply(
+        START_TEXT.format(message.from_user.mention),
+        reply_markup=get_start_keyboard()
     )
 
-@Client.on_callback_query(filters.regex(r"^(help_menu|about_menu|settings_menu|back_to_main|help_genlink|help_share|help_commands|about_dev|bot_stats|version_info)$"))
-async def clone_callback_handler(client: Client, callback_query: CallbackQuery):
-    """Handle callback queries for clone bots"""
-    data = callback_query.data
+@Client.on_callback_query(filters.regex("^clone_"))
+async def clone_callbacks(client, query: CallbackQuery):
+    """Handle clone bot callbacks"""
+    data = query.data
     
-    try:
-        if data == "help_menu":
-            await callback_query.edit_message_text(
-                "**📚 HELP MENU**\n\nChoose what you need help with:",
-                reply_markup=get_help_keyboard()
-            )
-        
-        elif data == "about_menu":
-            about_text = """**📋 ABOUT THIS BOT**
-
-🤖 **BOT TYPE** - File Store Clone Bot
-📝 **LANGUAGE** - Python
-📚 **LIBRARY** - Pyrofork  
-🗃️ **DATABASE** - MongoDB
-♻️ **CLONED FROM** - VJ File Store Bot"""
-            
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main")]
-            ])
-            
-            await callback_query.edit_message_text(about_text, reply_markup=keyboard)
-        
-        elif data == "settings_menu":
-            settings_text = """**⚙️ SETTINGS MENU**
-
-This is a clone bot. Settings are managed by the bot owner.
-
-**Available Features:**
-• File Upload & Link Generation
-• Permanent File Storage  
-• Fast File Delivery
-• Unlimited File Size"""
-            
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬅️ BACK", callback_data="back_to_main")]
-            ])
-            
-            await callback_query.edit_message_text(settings_text, reply_markup=keyboard)
-        
-        elif data == "back_to_main":
-            await callback_query.edit_message_text(
-                START_MESSAGE,
-                reply_markup=get_start_keyboard()
-            )
-        
-        elif data == "help_genlink":
-            help_text = """**🔗 HOW TO GENERATE LINKS**
-
-1. Send any file to this bot
-2. Bot will generate a shareable link
-3. Share the link with anyone  
-4. They can download using the link
-
-**Files supported:**
-• Documents, Videos, Audio, Photos
-• Any file type and size"""
-            
-            await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
-        
-        elif data == "help_share":
-            help_text = """**📤 HOW TO SHARE FILES**
-
-1. Upload your file to the bot
-2. Copy the generated link
-3. Share the link anywhere
-4. Others click link to download
-
-**Features:**
-• Links never expire
-• No download limits
-• Fast delivery"""
-            
-            await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
-        
-        elif data == "help_commands":
-            help_text = """**⚙️ BOT COMMANDS**
-
-`/start` - Start the bot
-`/help` - Show help menu
-`/about` - About this bot
-
-**Usage:**
-Just send any file to generate a shareable link!"""
-            
-            await callback_query.edit_message_text(help_text, reply_markup=get_help_keyboard())
-        
-    except Exception as e:
-        print(f"Callback error: {e}")
-        await callback_query.answer("Error occurred. Please try again.")
+    if data == "clone_help":
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+        ]])
+        await query.message.edit_text(HELP_TEXT, reply_markup=keyboard)
+    
+    elif data == "clone_about":
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+        ]])
+        await query.message.edit_text(ABOUT_TEXT, reply_markup=keyboard)
+    
+    elif data == "clone_start":
+        await query.message.edit_text(
+            START_TEXT.format(query.from_user.mention),
+            reply_markup=get_start_keyboard()
+        )
+    
+    await query.answer()
 
 @Client.on_message(filters.command(["help", "about"]) & filters.private)
-async def clone_help_about(client: Client, message: Message):
-    """Handle help and about commands for clone bots"""
+async def clone_help_about(client, message):
+    """Handle help and about commands"""
     command = message.command[0].lower()
     
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+    ]])
+    
     if command == "help":
-        await message.reply_text(
-            "**📚 HELP MENU**\n\nChoose what you need help with:",
-            reply_markup=get_help_keyboard()
+        await message.reply(HELP_TEXT, reply_markup=keyboard)
+    else:
+        await message.reply(ABOUT_TEXT, reply_markup=keyboard)
+
+# File upload handler for clone bots
+@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private, group=1)
+async def clone_file_upload(client, message):
+    """Handle file uploads in clone bot"""
+    
+    if not LOG_CHANNEL:
+        return await message.reply(
+            "<b>❌ Fɪʟᴇ sᴛᴏʀᴀɢᴇ ɴᴏᴛ ᴄᴏɴғɪɢᴜʀᴇᴅ!</b>"
         )
-    elif command == "about":
-        about_text = """**📋 ABOUT THIS BOT**
-
-🤖 **BOT TYPE** - File Store Clone Bot
-📝 **LANGUAGE** - Python
-📚 **LIBRARY** - Pyrofork  
-🗃️ **DATABASE** - MongoDB
-♻️ **CLONED FROM** - VJ File Store Bot"""
+    
+    try:
+        # Copy to log channel
+        post = await message.copy(LOG_CHANNEL)
+        file_id = str(post.id)
         
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("⬅️ MAIN MENU", callback_data="back_to_main")]
-        ])
+        # Generate link
+        bot_username = (await client.get_me()).username
+        string = f'file_{file_id}'
+        encoded = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
+        share_link = f"https://t.me/{bot_username}?start={encoded}"
         
-        await message.reply_text(about_text, reply_markup=keyboard)
+        # Send link
+        await message.reply(
+            f"<b>⭕ Hᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n"
+            f"🔗 Lɪɴᴋ: {share_link}</b>"
+        )
+        
+    except Exception as e:
+        print(f"Clone: Upload error - {e}")
+        await message.reply("<b>❌ Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ʟɪɴᴋ!</b>")
 
-print("✅ Smart clone commands loaded - conflict-free routing system!")
+print("✅ Clone commands loaded - non-conflicting mode with group=1 priority!")
