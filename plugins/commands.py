@@ -13,7 +13,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-@Client.on_message(filters.command("start") & filters.incoming)
+@Client.on_message(filters.command("start") & filters.incoming, group=2)
 async def start(client, message):
     # Add user to database
     if not await db.is_user_exist(message.from_user.id):
