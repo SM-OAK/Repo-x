@@ -6,7 +6,7 @@ from Script import script
 from database.database import db  # Your DB module for user management
 
 # Main /start handler (group=2 so clone bot handlers run before this)
-@Client.on_message(filters.command("start") & filters.private, group=2)
+@Client.on_message(filters.command("start") & filters.private, group=0)
 async def start(client, message):
     user_id = message.from_user.id
     
