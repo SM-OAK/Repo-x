@@ -2,35 +2,33 @@
 # Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
 # Ask Doubt on telegram @KingVJ01
 
-
 import re
 import os
 from os import environ
 from Script import script
 
 id_pattern = re.compile(r'^.\d+$')
+
 def is_enabled(value, default):
-    if value.lower() in ["true", "yes", "1", "enable", "y"]:
+    if str(value).lower() in ["true", "yes", "1", "enable", "y"]:
         return True
-    elif value.lower() in ["false", "no", "0", "disable", "n"]:
+    elif str(value).lower() in ["false", "no", "0", "disable", "n"]:
         return False
     else:
         return default
-      
+
 # Bot Information
 API_ID = int(environ.get("API_ID", "22321078"))
 API_HASH = environ.get("API_HASH", "9960806d290cf4170e43355fcc3687ac")
-BOT_TOKEN = environ.get("BOT_TOKEN", "8470211855:AAFaATq3Z0tqs1nCuQMslS44lY8MRZxdvZk")
+BOT_TOKEN = environ.get("BOT_TOKEN", "")
 
-PICS = (environ.get('PICS', 'https://graph.org/file/ce1723991756e48c35aa1.jpg')).split() # Bot Start Picture
+PICS = (environ.get('PICS', 'https://graph.org/file/ce1723991756e48c35aa1.jpg')).split()
 ADMINS = [int(admin) if id_pattern.search(admin) else admin for admin in environ.get('ADMINS', '6226520145').split()]
-BOT_USERNAME = environ.get("BOT_USERNAME", "Svadvance2_bot") # without @
+BOT_USERNAME = environ.get("BOT_USERNAME", "Svadvance2_bot")
 PORT = environ.get("PORT", "8080")
 
-# Clone Info :-
-CLONE_MODE = bool(environ.get('CLONE_MODE', True)) # Set True or False
-
-# If Clone Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+# Clone Info
+CLONE_MODE = is_enabled(environ.get('CLONE_MODE', "True"), True)
 CLONE_DB_URI = environ.get("CLONE_DB_URI", "mongodb+srv://clone:clone@cluster0.e5uszpi.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 CDB_NAME = environ.get("CDB_NAME", "clonetechvj")
 
@@ -38,53 +36,38 @@ CDB_NAME = environ.get("CDB_NAME", "clonetechvj")
 DB_URI = environ.get("DB_URI", "mongodb+srv://mysimplestats:simplestats@cluster0.uelokbe.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
 DB_NAME = environ.get("DB_NAME", "techvjbotz")
 
-# Auto Delete Information
-AUTO_DELETE_MODE = bool(environ.get('AUTO_DELETE_MODE', True)) # Set True or False
+# Auto Delete
+AUTO_DELETE_MODE = is_enabled(environ.get('AUTO_DELETE_MODE', "True"), True)
+AUTO_DELETE = int(environ.get("AUTO_DELETE", "30")) 
+AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "1800"))
 
-# If Auto Delete Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-AUTO_DELETE = int(environ.get("AUTO_DELETE", "30")) # Time in Minutes
-AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "1800")) # Time in Seconds
-
-# Channel Information
+# Channels
 LOG_CHANNEL = int(environ.get("LOG_CHANNEL", "-1002913585711"))
 CHANNEL_ID = int(environ.get("CHANNEL_ID", "-1002091966691"))
-FORCE_SUB_CHANNEL = int(environ.get("FORCE_SUB_CHANNEL", "-1002042829477")) # Added based on your guide
+FORCE_SUB_CHANNEL = int(environ.get("FORCE_SUB_CHANNEL", "-1002042829477"))
 
-# File Caption Information
+# Captions
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")
 BATCH_FILE_CAPTION = environ.get("BATCH_FILE_CAPTION", CUSTOM_FILE_CAPTION)
 
-# Enable - True or Disable - False
-PUBLIC_FILE_STORE = is_enabled((environ.get('PUBLIC_FILE_STORE', "True")), True)
+# Enable / Disable
+PUBLIC_FILE_STORE = is_enabled(environ.get('PUBLIC_FILE_STORE', "True"), True)
 
-# Verify Info :-
-VERIFY_MODE = bool(environ.get('VERIFY_MODE', False)) # Set True or False
+# Verify
+VERIFY_MODE = is_enabled(environ.get('VERIFY_MODE', "False"), False)
+SHORTLINK_URL = environ.get("SHORTLINK_URL", "")
+SHORTLINK_API = environ.get("SHORTLINK_API", "")
+VERIFY_TUTORIAL = environ.get("VERIFY_TUTORIAL", "")
 
-# If Verify Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-SHORTLINK_URL = environ.get("SHORTLINK_URL", "") # shortlink domain without https://
-SHORTLINK_API = environ.get("SHORTLINK_API", "") # shortlink api
-VERIFY_TUTORIAL = environ.get("VERIFY_TUTORIAL", "") # how to open link 
+# Website
+WEBSITE_URL_MODE = is_enabled(environ.get('WEBSITE_URL_MODE', "False"), False)
+WEBSITE_URL = environ.get("WEBSITE_URL", "")
 
-# Website Info:
-WEBSITE_URL_MODE = bool(environ.get('WEBSITE_URL_MODE', False)) # Set True or False
-
-# If Website Url Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
-WEBSITE_URL = environ.get("WEBSITE_URL", "") # For More Information Check Video On Yt - @Tech_VJ
-
-# File Stream Config
-STREAM_MODE = bool(environ.get('STREAM_MODE', True)) # Set True or False
-
-# If Stream Mode Is True Then Fill All Required Variable, If False Then Don't Fill.
+# Streaming
+STREAM_MODE = is_enabled(environ.get('STREAM_MODE', "True"), True)
 MULTI_CLIENT = False
 SLEEP_THRESHOLD = int(environ.get('SLEEP_THRESHOLD', '60'))
-PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))  # 20 minutes
-if 'DYNO' in environ:
-    ON_HEROKU = True
-else:
-    ON_HEROKU = False
+PING_INTERVAL = int(environ.get("PING_INTERVAL", "1200"))
+
+ON_HEROKU = 'DYNO' in environ
 URL = environ.get("URL", "https://testofvjfilter-1fa60b1b8498.herokuapp.com/")
-
-
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
