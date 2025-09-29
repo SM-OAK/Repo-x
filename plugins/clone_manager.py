@@ -170,3 +170,25 @@ async def delete_clone_command(client, message):
     except Exception as e:
         logger.error(f"Delete clone error: {e}")
         await message.reply(f"Eʀʀᴏʀ: {str(e)}")
+
+async def restart_bots():
+    """Restart all clone bots from database"""
+    from pyrogram import Client
+    from config import API_ID, API_HASH
+    from database.clone_db import clone_db
+    
+    clones = await clone_db.get_all_clones()
+    
+    for clone in clones:
+        try:
+            client = Client(
+                f"clone_{clone['bot_id']}",
+                API_ID, API_HASH,
+                bot_token=clone['token'],
+                plugins={"root": "clone_plugins"}
+            )
+            await client.start()
+            print(f"✅ Restarted: @{clone['username']}")
+        except Exception as e:
+            print(f"❌ Failed: {e}")
+
