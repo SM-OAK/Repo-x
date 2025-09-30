@@ -9,8 +9,13 @@ from pathlib import Path
 from pyrogram import idle
 import logging
 import logging.config
+import asyncio
+import signal
+import pytz
+from datetime import date, datetime
+from aiohttp import web
 
-# Get logging configurations
+# Logging setup
 logging.config.fileConfig('logging.conf')
 logging.getLogger().setLevel(logging.INFO)
 logging.getLogger("pyrogram").setLevel(logging.ERROR)
@@ -18,49 +23,68 @@ logging.getLogger("pyrogram").setLevel(logging.ERROR)
 from pyrogram import Client, __version__
 from pyrogram.raw.all import layer
 from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT, API_ID, API_HASH, DB_URI
-from typing import Union, Optional, AsyncGenerator
-from pyrogram import types
-from Script import script 
-from datetime import date, datetime 
-import pytz
-from aiohttp import web
+from Script import script
 from TechVJ.server import web_server
-
-import asyncio
-from pyrogram import idle
 from TechVJ.bot import StreamBot
 from TechVJ.utils.keepalive import ping_server
 from TechVJ.bot.clients import initialize_clients
 
-# Safe import with fallback for restart_bots
+# -------------------------------
+# Active clones for graceful shutdown
+# -------------------------------
+try:
+    from plugins.clone_manager import active_clones
+except ImportError:
+    active_clones = {}
+
+# -------------------------------
+# Graceful Shutdown
+# -------------------------------
+async def shutdown(signal_received=None):
+    print(f"⚠️ Shutdown initiated. Signal: {signal_received}")
+    # Stop all clone bots
+    for bot_id, bot_client in active_clones.items():
+        try:
+            await bot_client.stop()
+            print(f"✅ Stopped clone bot {bot_id}")
+        except Exception as e:
+            print(f"❌ Failed to stop clone {bot_id}: {e}")
+    # Stop main bot
+    try:
+        await StreamBot.stop()
+        print("✅ Main bot stopped")
+    except Exception as e:
+        print(f"❌ Failed to stop main bot: {e}")
+    # Stop event loop
+    asyncio.get_event_loop().stop()
+
+# Register OS signals
+for sig in (signal.SIGINT, signal.SIGTERM):
+    asyncio.get_event_loop().add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
+
+# -------------------------------
+# Safe import restart_bots
+# -------------------------------
 try:
     from plugins.clone_manager import restart_bots
 except ImportError:
-    print("⚠️ plugins.clone not found, using built-in restart function")
-    # Built-in restart function
+    print("⚠️ plugins.clone not found, using fallback restart function")
     async def restart_bots():
-        """Restart all existing clone bots from database"""
+        """Restart all clones from DB"""
         try:
             from pymongo import MongoClient
-            
             mongo_client = MongoClient(DB_URI)
             mongo_db = mongo_client["cloned_vjbotz"]
-            
             bots = list(mongo_db.bots.find())
-            
             if not bots:
                 print("No clones to restart")
                 return
-            
             print(f"Found {len(bots)} clone(s) to restart...")
-            
             for bot in bots:
-                bot_token = bot.get('token')
+                bot_token = bot.get('bot_token')
                 bot_username = bot.get('username', 'unknown')
-                
                 if not bot_token:
                     continue
-                
                 try:
                     clone_client = Client(
                         f"clone_{bot_token[:8]}",
@@ -69,23 +93,23 @@ except ImportError:
                         bot_token=bot_token,
                         plugins={"root": "clone_plugins"}
                     )
-                    
                     await clone_client.start()
+                    active_clones[bot.get('bot_id')] = clone_client
                     print(f"  ✅ Restarted clone: @{bot_username}")
-                    
                 except Exception as e:
                     print(f"  ❌ Failed to restart @{bot_username}: {e}")
-            
             print("Clone restart process completed")
-            
         except Exception as e:
             print(f"Error in restart_bots: {e}")
 
-# Load main bot plugins
+# -------------------------------
+# Load Plugins
+# -------------------------------
+# Main bot plugins
 ppath = "plugins/*.py"
 files = glob.glob(ppath)
 
-# Load clone plugins
+# Clone plugins
 clone_ppath = "clone_plugins/*.py"
 clone_files = glob.glob(clone_ppath)
 
@@ -93,41 +117,36 @@ StreamBot.start()
 loop = asyncio.get_event_loop()
 
 async def start():
-    print('\n')
-    print('Initializing Tech VJ Bot')
+    print("\nInitializing Tech VJ Bot...")
     bot_info = await StreamBot.get_me()
     StreamBot.username = bot_info.username
+
+    # Initialize clients
     await initialize_clients()
-    
-    # Load main bot plugins
-    print("\n🔹 Loading Main Bot Plugins...")
+
+    # Load main plugins
+    print("\n🔹 Loading Main Plugins...")
     for name in files:
         with open(name) as a:
-            patt = Path(a.name)
-            plugin_name = patt.stem.replace(".py", "")
+            plugin_name = Path(a.name).stem
             plugins_dir = Path(f"plugins/{plugin_name}.py")
-            import_path = "plugins.{}".format(plugin_name)
+            import_path = f"plugins.{plugin_name}"
             spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
             load = importlib.util.module_from_spec(spec)
             spec.loader.exec_module(load)
             sys.modules["plugins." + plugin_name] = load
             print(f"  ✅ Main Plugin => {plugin_name}")
-    
-    # Load clone plugins if CLONE_MODE is enabled
+
+    # Load clone plugins if enabled
     if CLONE_MODE:
-        print("\n🔸 Loading Clone Bot Plugins...")
+        print("\n🔸 Loading Clone Plugins...")
         for name in clone_files:
             with open(name) as a:
-                patt = Path(a.name)
-                plugin_name = patt.stem.replace(".py", "")
-                
-                # Skip __init__.py
+                plugin_name = Path(a.name).stem
                 if plugin_name == "__init__":
                     continue
-                    
                 plugins_dir = Path(f"clone_plugins/{plugin_name}.py")
-                import_path = "clone_plugins.{}".format(plugin_name)
-                
+                import_path = f"clone_plugins.{plugin_name}"
                 try:
                     spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
                     load = importlib.util.module_from_spec(spec)
@@ -138,57 +157,53 @@ async def start():
                     print(f"  ❌ Error loading clone plugin {plugin_name}: {e}")
     else:
         print("\n⚠️ Clone Mode Disabled - Skipping clone plugins")
-    
-    # Start keepalive if on Heroku
+
+    # Keepalive for Heroku
     if ON_HEROKU:
         asyncio.create_task(ping_server())
-    
-    # Get bot info
-    me = await StreamBot.get_me()
-    tz = pytz.timezone('Asia/Kolkata')
-    today = date.today()
-    now = datetime.now(tz)
-    time = now.strftime("%H:%M:%S %p")
-    
+
     # Start web server
     app = web.AppRunner(await web_server())
-    await StreamBot.send_message(
-        chat_id=LOG_CHANNEL, 
-        text=script.RESTART_TXT.format(today, time)
-    )
     await app.setup()
     bind_address = "0.0.0.0"
     await web.TCPSite(app, bind_address, PORT).start()
-    
-    # Restart existing clone bots if enabled
+
+    # Send restart message to LOG_CHANNEL
+    tz = pytz.timezone("Asia/Kolkata")
+    today = date.today()
+    now = datetime.now(tz)
+    time = now.strftime("%H:%M:%S %p")
+    await StreamBot.send_message(chat_id=LOG_CHANNEL, text=script.RESTART_TXT.format(today, time))
+
+    # Restart clone bots
     if CLONE_MODE:
         print("\n🔄 Restarting existing clone bots...")
         try:
             await restart_bots()
         except Exception as e:
             print(f"❌ Error restarting clones: {e}")
-    
+
+    # Startup complete
     print("\n✅ Bot Started Successfully!")
-    print(f"👤 Bot Username: @{me.username}")
-    print(f"🆔 Bot ID: {me.id}")
+    print(f"👤 Bot Username: @{bot_info.username}")
+    print(f"🆔 Bot ID: {bot_info.id}")
     print(f"📦 Pyrogram Version: {__version__}")
     print(f"🔧 Python Version: {sys.version.split()[0]}")
     print("\n⚡ Powered By @VJ_Botz\n")
-    
-    await idle()
 
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+    # Idle with graceful shutdown
+    try:
+        await idle()
+    finally:
+        await shutdown("idle finished")
 
-if __name__ == '__main__':
+# -------------------------------
+# Run bot
+# -------------------------------
+if __name__ == "__main__":
     try:
         loop.run_until_complete(start())
     except KeyboardInterrupt:
-        logging.info('Service Stopped Bye 👋')
+        logging.info("Service stopped by user 👋")
     except Exception as e:
-        logging.error(f'Fatal Error: {e}')
-
-# Don't Remove Credit Tg - @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot https://youtube.com/@Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+        logging.error(f"Fatal error: {e}")
