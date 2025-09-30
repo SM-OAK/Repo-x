@@ -18,7 +18,8 @@ async def start_callback(client, query: CallbackQuery):
                     InlineKeyboardButton('👤 ᴜsᴇʀs', callback_data='stats'),
                     InlineKeyboardButton('📢 ʙʀᴏᴀᴅᴄᴀsᴛ', callback_data='broadcast')
                 ],
-                [InlineKeyboardButton('🤖 ᴍᴀɴᴀɢᴇ ᴄʟᴏɴᴇs', callback_data='manage_clones')],
+                # --- THIS LINE IS FIXED ---
+                [InlineKeyboardButton('🤖 ᴍᴀɴᴀɢᴇ ᴄʟᴏɴᴇs', callback_data='clone')],
                 [InlineKeyboardButton('⚙️ sᴇᴛᴛɪɴɢs', callback_data='settings')]
             ]
             await query.message.edit_text(
@@ -43,6 +44,8 @@ async def start_callback(client, query: CallbackQuery):
         logger.error(f"Error in start callback: {e}")
         await query.answer("An error occurred!", show_alert=True)
 
+# ... (rest of the file is correct and remains unchanged)
+# ...
 @Client.on_callback_query(filters.regex("^help$"))
 async def help_callback(client, query: CallbackQuery):
     """Handle help button callback"""
@@ -149,8 +152,5 @@ async def pages_callback(client, query: CallbackQuery):
     """Handle pagination info"""
     await query.answer("Use the navigation buttons!", show_alert=False)
 
-# IMPORTANT: NO generic @Client.on_callback_query() handler here!
-# Clone callbacks are handled in clone_manager.py
-# Customize callbacks are handled in clone_customize.py
-
 logger.info("✅ Main callbacks loaded")
+
