@@ -44,7 +44,7 @@ AUTO_DELETE_TIME = int(environ.get("AUTO_DELETE_TIME", "1800"))
 # Channels
 LOG_CHANNEL = int(environ.get("LOG_CHANNEL", "-1002913585711"))
 CHANNEL_ID = int(environ.get("CHANNEL_ID", "-1002091966691"))
-FORCE_SUB_CHANNEL = int(environ.get("FORCE_SUB_CHANNEL", "-1002042829477"))
+FORCE_SUB_CHANNEL = int(environ.get("FORCE_SUB_CHANNEL", "0"))
 
 # Captions
 CUSTOM_FILE_CAPTION = environ.get("CUSTOM_FILE_CAPTION", f"{script.CAPTION}")
