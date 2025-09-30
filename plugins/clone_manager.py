@@ -1,4 +1,5 @@
 import re
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from config import CLONE_MODE, API_ID, API_HASH, ADMINS
@@ -48,7 +49,6 @@ async def clone_command(client, message):
         return await message.reply("Clone feature is disabled!")
     
     try:
-        # Create clone_sessions folder if not exists
         os.makedirs("clone_sessions", exist_ok=True)
         
         # Ask for bot token
@@ -69,9 +69,9 @@ async def clone_command(client, message):
         if not (token_msg.forward_from and token_msg.forward_from.id == 93372553):
             return await message.reply('❌ Nᴏᴛ ғᴏʀᴡᴀʀᴅᴇᴅ ғʀᴏᴍ @BotFather! Please forward the message.')
         
-        # Extract token from message
+        # Extract token (flexible regex)
         try:
-            bot_token = re.findall(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', token_msg.text)[0]
+            bot_token = re.findall(r"\d{8,10}:[A-Za-z0-9_-]{30,}", token_msg.text)[0]
         except:
             return await message.reply('❌ Iɴᴠᴀʟɪᴅ ᴛᴏᴋᴇɴ ғᴏʀᴍᴀᴛ! Please try again.')
         
@@ -80,12 +80,12 @@ async def clone_command(client, message):
         if existing:
             return await message.reply('⚠️ Tʜɪs ʙᴏᴛ ɪs ᴀʟʀᴇᴀᴅʏ ᴄʟᴏɴᴇᴅ!')
         
-        # Create clone
         msg = await message.reply_text("⏳ Cʀᴇᴀᴛɪɴɢ ʏᴏᴜʀ ᴄʟᴏɴᴇ ʙᴏᴛ...")
         
         try:
+            # Use bot_id based session name
             clone_bot = Client(
-                f"clone_sessions/clone_{message.from_user.id}_{bot_token[:8]}",
+                f"clone_sessions/clone_{message.from_user.id}",
                 API_ID,
                 API_HASH,
                 bot_token=bot_token,
@@ -95,11 +95,11 @@ async def clone_command(client, message):
             await clone_bot.start()
             bot_info = await clone_bot.get_me()
             
-            # Save to database - FIXED: use bot_token not token
+            # Save to database
             await clone_db.add_clone(
                 bot_id=bot_info.id,
                 user_id=message.from_user.id,
-                bot_token=bot_token,  # This is the correct field name
+                bot_token=bot_token,
                 username=bot_info.username,
                 name=bot_info.first_name
             )
@@ -122,14 +122,11 @@ async def clone_command(client, message):
             
         except Exception as e:
             logger.error(f"Clone creation error: {e}", exc_info=True)
-            await msg.edit_text(
-                f"⚠️ <b>Eʀʀᴏʀ:</b>\n\n<code>{e}</code>\n\n"
-                "Please contact support."
-            )
+            await msg.edit_text("⚠️ An error occurred while creating your clone. Please try again or contact support.")
             
     except Exception as e:
         logger.error(f"Clone process error: {e}", exc_info=True)
-        await message.reply(f"Aɴ ᴇʀʀᴏʀ ᴏᴄᴄᴜʀʀᴇᴅ: {str(e)}")
+        await message.reply("⚠️ An unexpected error occurred. Please try again.")
 
 # Manage clones (Admin only)
 @Client.on_callback_query(filters.regex("^manage_clones$"))
@@ -143,7 +140,7 @@ async def manage_clones_callback(client, query: CallbackQuery):
         return await query.answer("No clones created yet!", show_alert=True)
     
     buttons = []
-    for clone in clones[:10]:  # Show first 10
+    for clone in clones[:10]:
         buttons.append([
             InlineKeyboardButton(
                 f"🤖 {clone['name']} (@{clone['username']})",
@@ -158,7 +155,7 @@ async def manage_clones_callback(client, query: CallbackQuery):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# Delete clone - FIXED LOGIC
+# Delete clone
 @Client.on_message(filters.command("deleteclone") & filters.private)
 async def delete_clone_command(client, message):
     if not CLONE_MODE:
@@ -176,8 +173,7 @@ async def delete_clone_command(client, message):
         if token_msg.text == '/cancel':
             return await message.reply('Cᴀɴᴄᴇʟᴇᴅ!')
         
-        # Extract token
-        bot_token = re.findall(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', token_msg.text)
+        bot_token = re.findall(r"\d{8,10}:[A-Za-z0-9_-]{30,}", token_msg.text)
         
         if not bot_token:
             return await message.reply("❌ Iɴᴠᴀʟɪᴅ ᴛᴏᴋᴇɴ!")
@@ -190,67 +186,75 @@ async def delete_clone_command(client, message):
         if not clone:
             return await message.reply("❌ Cʟᴏɴᴇ ɴᴏᴛ ғᴏᴜɴᴅ in database!")
         
-        # Check ownership
         if clone['user_id'] != message.from_user.id and message.from_user.id not in ADMINS:
             return await message.reply("❌ Tʜɪs ɪs ɴᴏᴛ ʏᴏᴜʀ ᴄʟᴏɴᴇ!")
         
-        # Stop the clone if running
         bot_id = clone['bot_id']
         if bot_id in active_clones:
             try:
                 await active_clones[bot_id].stop()
                 del active_clones[bot_id]
-            except:
-                pass
+                logger.info(f"Stopped clone {bot_id}")
+            except Exception as e:
+                logger.warning(f"Failed to stop clone {bot_id}: {e}")
         
-        # Delete from database
         await clone_db.delete_clone(bot_token)
         
         await message.reply("✅ Cʟᴏɴᴇ ᴅᴇʟᴇᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!")
         
     except Exception as e:
         logger.error(f"Delete clone error: {e}", exc_info=True)
-        await message.reply(f"Eʀʀᴏʀ: {str(e)}")
+        await message.reply("⚠️ Error while deleting clone. Please try again.")
 
-# Restart all clones - FIXED
+# Restart all clones - patched
 async def restart_bots():
     """Restart all clone bots from database"""
     if not CLONE_MODE:
         logger.info("Clone mode is disabled")
         return
-    
+
     try:
-        # Create sessions folder
         os.makedirs("clone_sessions", exist_ok=True)
-        
+
         clones = await clone_db.get_all_clones()
         logger.info(f"🔄 Found {len(clones)} clones in database")
-        
+
         for clone in clones:
             try:
                 bot_id = clone['bot_id']
-                bot_token = clone['bot_token']  # FIXED: was 'token', should be 'bot_token'
-                
+                bot_token = clone['bot_token']
+
+                if bot_id in active_clones:
+                    try:
+                        await active_clones[bot_id].stop()
+                        del active_clones[bot_id]
+                    except Exception as e:
+                        logger.warning(f"Failed to stop old session for {bot_id}: {e}")
+
                 logger.info(f"Starting clone {bot_id}...")
-                
+
+                session_name = f"clone_sessions/clone_{bot_id}"
+
                 client = Client(
-                    f"clone_sessions/clone_{bot_id}",
-                    API_ID, 
+                    session_name,
+                    API_ID,
                     API_HASH,
                     bot_token=bot_token,
                     plugins={"root": "clone_plugins"}
                 )
-                
+
                 await client.start()
                 active_clones[bot_id] = client
-                
+
                 logger.info(f"✅ Restarted: @{clone['username']}")
-                
+
+                await asyncio.sleep(1)  # throttle
+
             except Exception as e:
                 logger.error(f"❌ Failed to restart clone {clone.get('username', 'unknown')}: {e}")
                 continue
-        
+
         logger.info(f"✅ Successfully restarted {len(active_clones)} clones")
-        
+
     except Exception as e:
         logger.error(f"Error in restart_bots: {e}", exc_info=True)
