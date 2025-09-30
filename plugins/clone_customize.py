@@ -176,24 +176,30 @@ async def custom_auto_delete(client, query: CallbackQuery):
     )
 
     try:
-        msg = await client.ask(query.message.chat.id, timeout=300)
-        if msg.text.lower() == "/cancel":
-            return await query.message.edit_text("Cancelled!")
+    msg = await client.ask(query.message.chat.id, timeout=300)
+    if msg.text.lower() == "/cancel":
+        return await query.message.edit_text("Cancelled!")
 
-        match = re.match(r"(\d+)\s*(sec|s|min|m|hr|h)", msg.text.lower())
-        if not match:
-            return await query.message.edit_text("Invalid format! Use e.g., 30 sec, 5 min, 2 hrs.")
+    match = re.match(r"(\d+)\s*(sec|s|min|m|hr|h)", msg.text.lower())
+    if not match:
+        return await query.message.edit_text("Invalid format! Use e.g., 30 sec, 5 min, 2 hrs.")
 
-        number, unit = match.groups()
-        number = int(number)
-        if unit in ["sec", "s"]:
-            seconds = number
-        elif unit in ["min", "m"]:
-            seconds = number * 60
-        elif unit in ["hr", "h"]:
-            seconds = number * 3600
-        else:
-            seconds = 0
+    number, unit = match.groups()
+    number = int(number)
+    if unit in ["sec", "s"]:
+        seconds = number
+    elif unit in ["min", "m"]:
+        seconds = number * 60
+    elif unit in ["hr", "h"]:
+        seconds = number * 3600
+    else:
+        seconds = 0
 
-        await clone_db.update_clone_setting(bot_id, 'auto_delete_seconds', seconds)
-        await query.message.edit
+    await clone_db.update_clone_setting(bot_id, 'auto_delete_seconds', seconds)
+    await query.message.edit_text(
+        f"✅ Auto Delete set to {seconds} seconds!",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Back', callback_data=f'set_autodel_{bot_id}')]])
+    )
+
+except Exception as e:
+    await query.message.edit_text(f"⚠️ Error: {e}")
