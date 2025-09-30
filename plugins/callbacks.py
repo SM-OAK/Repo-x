@@ -93,8 +93,7 @@ async def broadcast_callback(client, query: CallbackQuery):
         buttons = [[InlineKeyboardButton('🔙 ʙᴀᴄᴋ', callback_data='start')]]
         await query.message.edit_text(
             "<b>📢 Bʀᴏᴀᴅᴄᴀsᴛ Mᴇssᴀɢᴇ</b>\n\n"
-            "Reply to a message to broadcast it.\n\n"
-            "Or use /broadcast command.",
+            "Reply to a message with /broadcast to send it to all users.",
             reply_markup=InlineKeyboardMarkup(buttons)
         )
         await query.answer()
@@ -130,10 +129,9 @@ async def settings_callback(client, query: CallbackQuery):
         logger.error(f"Error in settings callback: {e}")
         await query.answer("An error occurred!", show_alert=True)
 
-# Placeholder toggles
 @Client.on_callback_query(filters.regex("^toggle_(fsub|autodel|filestore|stream)$"))
 async def toggle_settings(client, query: CallbackQuery):
-    """Handle toggle buttons"""
+    """Handle toggle buttons - placeholder"""
     await query.answer("This feature is under development!", show_alert=True)
 
 @Client.on_callback_query(filters.regex("^close$"))
@@ -151,8 +149,8 @@ async def pages_callback(client, query: CallbackQuery):
     """Handle pagination info"""
     await query.answer("Use the navigation buttons!", show_alert=False)
 
-# NOTE: Removed generic callback_handler to prevent conflicts
-# Clone-related callbacks are handled in clone_manager.py
+# IMPORTANT: NO generic @Client.on_callback_query() handler here!
+# Clone callbacks are handled in clone_manager.py
 # Customize callbacks are handled in clone_customize.py
 
 logger.info("✅ Main callbacks loaded")
