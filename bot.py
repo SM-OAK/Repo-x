@@ -22,7 +22,6 @@ logging.getLogger("pyrogram").setLevel(logging.ERROR)
 
 # Import from local modules
 from config import LOG_CHANNEL, ON_HEROKU, CLONE_MODE, PORT, API_ID, API_HASH, CLONE_DB_URI, CDB_NAME
-from shared import ACTIVE_CLONES
 from Script import script
 from TechVJ.server import web_server
 from TechVJ.bot import StreamBot
