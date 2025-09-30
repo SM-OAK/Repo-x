@@ -15,7 +15,7 @@ active_clones = {}
 
 # -----------------------------
 # Main Clone Menu (callback: "clone")
-# This now shows the "Manage Clone's" screen directly, as per your screenshot.
+# This now shows the "Manage Clone's" screen directly.
 # -----------------------------
 @Client.on_callback_query(filters.regex("^clone$"))
 async def clone_management_menu(client, query: CallbackQuery):
@@ -50,39 +50,9 @@ async def clone_management_menu(client, query: CallbackQuery):
     )
 
 # -----------------------------
-# NEW! Customize Clone Menu
-# This function is called when a user clicks on their clone's name.
+# NOTE: The "customize_clone" function was REMOVED from this file.
+# The correct version is in clone_customize.py and will be loaded from there.
 # -----------------------------
-@Client.on_callback_query(filters.regex("^customize_"))
-async def customize_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
-    clone = await clone_db.get_clone(bot_id)
-
-    if not clone:
-        return await query.answer("Clone not found!", show_alert=True)
-        
-    if clone['user_id'] != query.from_user.id and query.from_user.id not in ADMINS:
-        return await query.answer("This is not your bot!", show_alert=True)
-
-    # You can add all your customization buttons here
-    buttons = [
-        [
-            InlineKeyboardButton('📝 START MSG', callback_data=f'set_start_{bot_id}'),
-            InlineKeyboardButton('🔒 FORCE SUB', callback_data=f'set_fsub_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🗑️ DELETE CLONE', callback_data=f'delete_clone_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🔙 Back to Clones', callback_data='clone')
-        ]
-    ]
-
-    await query.message.edit_text(
-        f"🛠️ **Customize Clone: {clone['name']}**\n\n"
-        f"Configure your bot's settings using the buttons below.",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
 
 # -----------------------------
 # Add Clone Instructions (callback: "add_clone")
@@ -165,32 +135,9 @@ async def clone_command(client, message):
 
 
 # -----------------------------
-# Delete Clone
+# NOTE: The "delete_clone" function was REMOVED from this file.
+# The safer, two-step deletion is handled in clone_customize.py
 # -----------------------------
-@Client.on_callback_query(filters.regex("^delete_clone_"))
-async def delete_clone_button_callback(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    if not clone:
-        return await query.answer("Clone not found!", show_alert=True)
-
-    user_id = query.from_user.id
-    if clone['user_id'] != user_id and user_id not in ADMINS:
-        return await query.answer("❌ This is not your clone!", show_alert=True)
-
-    # Stop bot if running
-    if bot_id in active_clones:
-        try:
-            await active_clones[bot_id].stop()
-            del active_clones[bot_id]
-        except:
-            pass
-
-    # Delete from DB
-    await clone_db.delete_clone_by_id(bot_id)
-    await query.answer("✅ Clone deleted successfully!", show_alert=True)
-    # Go back to the main clone menu
-    await clone_management_menu(client, query)
 
 
 # -----------------------------
