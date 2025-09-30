@@ -1,3 +1,4 @@
+import re
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from database.clone_db import clone_db
@@ -64,12 +65,34 @@ async def set_start_msg(client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex("^start_text_"))
 async def set_start_text_msg(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    # ... (code from previous step)
+    back_button = InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'set_start_{bot_id}')]])
+    try:
+        msg_req = await client.ask(
+            chat_id=query.from_user.id,
+            text="Sᴇɴᴅ ʏᴏᴜʀ ᴄᴜsᴛᴏᴍ sᴛᴀʀᴛ ᴍᴇssᴀɢᴇ ɴᴏᴡ.",
+            filters=filters.text, timeout=300
+        )
+        await clone_db.update_clone_setting(bot_id, 'start_message', msg_req.text)
+        await clone_db.update_clone_setting(bot_id, 'start_photo', None)
+        await query.message.edit_text("✅ Sᴛᴀʀᴛ ᴍᴇssᴀɢᴇ ᴜᴘᴅᴀᴛᴇᴅ!", reply_markup=back_button)
+    except:
+        await query.message.edit_text("Tɪᴍᴇᴏᴜᴛ!", reply_markup=back_button)
 
 @Client.on_callback_query(filters.regex("^start_photo_"))
 async def set_start_photo_msg(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    # ... (code from previous step)
+    back_button = InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'set_start_{bot_id}')]])
+    try:
+        msg_req = await client.ask(
+            chat_id=query.from_user.id,
+            text="Sᴇɴᴅ ᴀ ᴘʜᴏᴛᴏ. Tʜᴇ ᴄᴀᴘᴛɪᴏɴ ᴡɪʟʟ ʙᴇ ᴜsᴇᴅ ᴀs ᴛʜᴇ sᴛᴀʀᴛ ᴛᴇxᴛ.",
+            filters=filters.photo, timeout=300
+        )
+        await clone_db.update_clone_setting(bot_id, 'start_photo', msg_req.photo.file_id)
+        await clone_db.update_clone_setting(bot_id, 'start_message', msg_req.caption.html if msg_req.caption else None)
+        await query.message.edit_text("✅ Sᴛᴀʀᴛ ᴘʜᴏᴛᴏ ᴜᴘᴅᴀᴛᴇᴅ!", reply_markup=back_button)
+    except:
+        await query.message.edit_text("Tɪᴍᴇᴏᴜᴛ!", reply_markup=back_button)
 
 
 # --- 2. FORCE SUB ---
@@ -77,17 +100,39 @@ async def set_start_photo_msg(client, query: CallbackQuery):
 @Client.on_callback_query(filters.regex("^set_fsub_"))
 async def set_force_sub(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    # ... (code from previous step)
+    clone = await clone_db.get_clone(bot_id)
+    channels = clone.get('settings', {}).get('force_sub_channels', [])
+    buttons = []
+    for channel in channels:
+        buttons.append([InlineKeyboardButton(f'❌ {channel}', callback_data=f'rm_fsub_{bot_id}_{channel}')])
+    if len(channels) < 4:
+        buttons.append([InlineKeyboardButton('➕ Aᴅᴅ Cʜᴀɴɴᴇʟ', callback_data=f'add_fsub_{bot_id}')])
+    buttons.append([InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')])
+    text = f"<b>🔒 Fᴏʀᴄᴇ Sᴜʙ Sᴇᴛᴛɪɴɢs</b>\n\nYou have added {len(channels)} of 4 channels."
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 @Client.on_callback_query(filters.regex("^add_fsub_"))
 async def add_fsub_channel_handler(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    # ... (code from previous step)
+    try:
+        msg = await client.ask(
+            chat_id=query.from_user.id,
+            text="Sᴇɴᴅ ᴛʜᴇ ID ᴏғ ᴛʜᴇ ᴄʜᴀɴɴᴇʟ ʏᴏᴜ ᴡᴀɴᴛ ᴛᴏ ᴀᴅᴅ.",
+            filters=filters.text, timeout=300
+        )
+        channel_id = int(msg.text)
+        await clone_db.add_fsub_channel(bot_id, channel_id)
+        await query.answer("Channel added successfully!", show_alert=True)
+    except:
+        await query.answer("Invalid ID or timeout.", show_alert=True)
+    await set_force_sub(client, query)
 
 @Client.on_callback_query(filters.regex("^rm_fsub_"))
 async def remove_fsub_channel_handler(client, query: CallbackQuery):
     _, _, bot_id, channel_id = query.data.split("_")
-    # ... (code from previous step)
+    await clone_db.remove_fsub_channel(int(bot_id), int(channel_id))
+    await query.answer("Channel removed successfully!", show_alert=True)
+    await set_force_sub(client, query)
 
 
 # --- 3. AUTO DELETE ---
@@ -98,8 +143,7 @@ async def set_auto_delete(client, query: CallbackQuery):
     clone = await clone_db.get_clone(bot_id)
     settings = clone.get('settings', {})
     status = "Eɴᴀʙʟᴇᴅ ✅" if settings.get('auto_delete') else "Dɪsᴀʙʟᴇᴅ ❌"
-    time = settings.get('auto_delete_time', 1800) // 60 # Show in minutes
-    
+    time = settings.get('auto_delete_time', 1800) // 60
     buttons = [
         [InlineKeyboardButton('⏱️ Cʜᴀɴɢᴇ Tɪᴍᴇ', callback_data=f'autodel_time_{bot_id}')],
         [
@@ -108,8 +152,7 @@ async def set_auto_delete(client, query: CallbackQuery):
         ],
         [InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]
     ]
-    
-    text = f"<b>⏱️ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ Sᴇᴛᴛɪɴɢs</b>\n\nCᴜʀʀᴇɴᴛ Sᴛᴀᴛᴜs: <b>{status}</b>\nDᴇʟᴇᴛᴇ Aғᴛᴇʀ: <b>{time} ᴍɪɴᴜᴛᴇs</b>"
+    text = f"<b>⏱️ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ Sᴇᴛᴛɪɴɢs</b>\n\nSᴛᴀᴛᴜs: <b>{status}</b>\nDᴇʟᴇᴛᴇ Aғᴛᴇʀ: <b>{time} ᴍɪɴᴜᴛᴇs</b>"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 @Client.on_callback_query(filters.regex("^toggle_autodel_"))
@@ -118,50 +161,66 @@ async def toggle_auto_delete(client, query: CallbackQuery):
     status = status_str == 'true'
     await clone_db.update_clone_setting(int(bot_id), 'auto_delete', status)
     await query.answer(f"Auto Delete {'Enabled' if status else 'Disabled'}!", show_alert=True)
-    await set_auto_delete(client, query) # Refresh menu
+    await set_auto_delete(client, query)
 
 @Client.on_callback_query(filters.regex("^autodel_time_"))
 async def change_autodel_time(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    back_button = InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'set_autodel_{bot_id}')]])
     try:
         msg = await client.ask(
             chat_id=query.from_user.id,
             text="Sᴇɴᴅ ᴛʜᴇ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ ᴛɪᴍᴇ ɪɴ **ᴍɪɴᴜᴛᴇs**.",
             filters=filters.text, timeout=300
         )
-        time_in_minutes = int(msg.text)
-        time_in_seconds = time_in_minutes * 60
+        time_in_seconds = int(msg.text) * 60
         await clone_db.update_clone_setting(bot_id, 'auto_delete_time', time_in_seconds)
         await query.answer("Time updated successfully!", show_alert=True)
     except:
         await query.answer("Invalid input or timeout.", show_alert=True)
-    await set_auto_delete(client, query) # Refresh menu
+    await set_auto_delete(client, query)
 
 
 # --- 4. OTHER UTILITIES ---
 
 @Client.on_callback_query(filters.regex("^clone_stats_"))
 async def clone_stats(client, query: CallbackQuery):
-    # ... (code is the same)
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    users = await clone_db.get_clone_users_count(bot_id)
+    await query.message.edit_text(
+        f"<b>📊 Cʟᴏɴᴇ Sᴛᴀᴛs</b>\n\nBᴏᴛ: @{clone['username']}\nUsᴇʀs: {users}",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]])
+    )
 
 @Client.on_callback_query(filters.regex("^restart_"))
 async def restart_clone(client, query: CallbackQuery):
-    # ... (code is the same)
+    bot_id = int(query.data.split("_")[1])
+    await query.answer("This feature is not implemented yet.", show_alert=True)
 
 @Client.on_callback_query(filters.regex("^delete_"))
 async def delete_clone_confirm(client, query: CallbackQuery):
-    # ... (code is the same)
+    bot_id = int(query.data.split("_")[1])
+    buttons = [
+        [
+            InlineKeyboardButton('✅ Yᴇs', callback_data=f'confirm_delete_{bot_id}'),
+            InlineKeyboardButton('❌ Nᴏ', callback_data=f'customize_{bot_id}')
+        ]
+    ]
+    await query.message.edit_text("⚠️ <b>Aʀᴇ ʏᴏᴜ sᴜʀᴇ?</b>", reply_markup=InlineKeyboardMarkup(buttons))
 
 @Client.on_callback_query(filters.regex("^confirm_delete_"))
 async def confirm_delete_clone(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    # ... (Robust delete code from previous step)
     if bot_id in ACTIVE_CLONES:
-        await ACTIVE_CLONES[bot_id].stop()
+        try:
+            await ACTIVE_CLONES[bot_id].stop()
+        except: pass
         del ACTIVE_CLONES[bot_id]
     await clone_db.delete_clone_by_id(bot_id)
     await query.answer("Clone stopped and deleted successfully!", show_alert=True)
-    # Refresh the main clone list
-    from plugins.clone_manager import clone_callback # Import here to avoid circular dependency
-    await clone_callback(client, query)
+    try:
+        from plugins.clone_manager import clone_callback
+        await clone_callback(client, query)
+    except:
+        await query.message.edit_text("Clone deleted. Please go back to the main menu.")
+
