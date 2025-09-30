@@ -109,3 +109,37 @@ async def delete_clone_callback(client: Client, query: CallbackQuery):
     except Exception as e:
         logger.error(f"Delete clone error: {e}", exc_info=True)
         await query.message.reply_text("An error occurred or the process timed out.")
+
+
+# ------------------------------------------------------------------
+# FIX FOR ImportError: cannot import name 'start_bots'
+# This function is needed to load and start all existing clones on boot.
+# ------------------------------------------------------------------
+async def start_bots():
+    """Loads all cloned bots from the database and starts them."""
+    logger.info("Starting cloned bots...")
+    clones = await clone_db.get_all_clones()
+    
+    for clone in clones:
+        bot_id = clone['bot_id']
+        bot_token = clone['bot_token']
+        user_id = clone['user_id']
+        
+        try:
+            # Recreate the Client object using the stored session path
+            clone_bot = Client(
+                f"clone_sessions/clone_{user_id}_{bot_token[:8]}",
+                api_id=API_ID, 
+                api_hash=API_HASH, 
+                bot_token=bot_token, 
+                plugins={"root": "clone_plugins"}
+            )
+            await clone_bot.start()
+            active_clones[bot_id] = clone_bot
+            logger.info(f"Successfully started clone bot {bot_id}")
+            
+        except Exception as e:
+            logger.error(f"Failed to start clone bot {bot_id}: {e}")
+            # Optional: If the error persists, you might need to delete 
+            # the corrupted clone from the database here.
+
