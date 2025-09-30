@@ -1,149 +1,115 @@
-# In plugins/clone_manager.py
-
-import re
-import os
+import asyncio
 import logging
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from config import CLONE_MODE, API_ID, API_HASH, ADMINS
+from pyrogram import Client
+from pyrogram.errors import ApiIdInvalid, AccessTokenInvalid, UserDeactivated
+from config import API_ID, API_HASH, CLONE_MODE, CLONE_DB_URI
 from database.clone_db import clone_db
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("CloneManager")
 
-# This dictionary will hold all active clone clients.
+# Store active clone clients {bot_id: Client}
 active_clones = {}
 
-# --- NEW, SIMPLIFIED WORKFLOW ---
-
-# 1. The user forwards a message. This handler checks if it's the token from BotFather.
-@Client.on_message(filters.private & filters.forwarded)
-async def handle_clone_token(client, message: Message):
-    if not CLONE_MODE:
-        return
-
-    # Check if the forwarded message is from BotFather
-    if not (message.forward_from and message.forward_from.id == 93372553):
-        return await message.reply('To create a clone, please forward the token message you get from @BotFather.')
-
-    # Extract the token from the message text
-    try:
-        bot_token = re.findall(r'(\d[0-9]{8,10}:[0-9A-Za-z_-]{35})', message.text)[0]
-    except IndexError:
-        return await message.reply('This does not look like a valid bot token message. Please try again.')
-
-    # Check if this token is already in our database
-    if await clone_db.get_clone_by_token(bot_token):
-        return await message.reply('⚠️ This bot has already been cloned.')
+async def start_clone_bot(bot_data):
+    """Start a single clone bot"""
+    bot_id = bot_data['bot_id']
+    bot_token = bot_data['bot_token']
+    user_id = bot_data['user_id']
     
-    # Show a "Creating..." message
-    msg = await message.reply_text("⏳ Creating your clone bot, please wait...")
-
     try:
-        # Define the session name for the new clone
-        session_name = f"clone_sessions/clone_{bot_token[:10]}"
+        logger.info(f"Starting clone bot {bot_id} for user {user_id}")
         
-        # Create a new Pyrogram client for the clone
-        clone_bot = Client(
-            name=session_name,
+        # Create client instance
+        clone_client = Client(
+            name=f"clone_{bot_id}",
             api_id=API_ID,
             api_hash=API_HASH,
             bot_token=bot_token,
-            plugins={"root": "clone_plugins"}
+            plugins=dict(root="clone_plugins"),
+            workdir="./clone_sessions"
         )
-
-        # Start the clone bot
-        await clone_bot.start()
-        bot_info = await clone_bot.get_me()
-
-        # Add the clone's details to the database
-        await clone_db.add_clone(
-            bot_id=bot_info.id,
-            user_id=message.from_user.id,
-            bot_token=bot_token,
-            username=bot_info.username,
-            name=bot_info.first_name
-        )
-
-        # Keep the new client running in our active clones dictionary
-        active_clones[bot_info.id] = clone_bot
-
-        # Send a success message
-        await msg.edit_text(
-            f"<b>✅ Successfully Cloned!</b>\n\n"
-            f"<b>🤖 Bot:</b> @{bot_info.username}\n"
-            f"<b>📝 Name:</b> {bot_info.first_name}\n\n"
-            "You can now customize your bot using the main bot's interface.",
-            reply_markup=InlineKeyboardMarkup(
-                [[InlineKeyboardButton('⚙️ Customize Your Clone', callback_data=f'customize_{bot_info.id}')]]
-            )
-        )
-
+        
+        # Start the client
+        await clone_client.start()
+        
+        # Get bot info
+        me = await clone_client.get_me()
+        logger.info(f"✅ Clone bot @{me.username} started successfully")
+        
+        # Update database with bot info
+        await clone_db.update_clone(bot_id, {
+            'username': me.username,
+            'name': me.first_name,
+            'is_active': True
+        })
+        
+        # Store in active clones
+        active_clones[bot_id] = clone_client
+        
+        return True
+        
+    except AccessTokenInvalid:
+        logger.error(f"❌ Invalid bot token for clone {bot_id}")
+        await clone_db.update_clone(bot_id, {'is_active': False, 'error': 'Invalid token'})
+        return False
+        
+    except ApiIdInvalid:
+        logger.error(f"❌ Invalid API credentials for clone {bot_id}")
+        return False
+        
     except Exception as e:
-        logger.error(f"Clone creation error: {e}", exc_info=True)
-        await msg.edit_text(f"⚠️ **An error occurred:**\n\n`{e}`\n\nPlease check your logs or contact support.")
+        logger.error(f"❌ Failed to start clone {bot_id}: {e}", exc_info=True)
+        await clone_db.update_clone(bot_id, {'is_active': False, 'error': str(e)})
+        return False
 
-# 2. Update the /start and help messages to give the new instructions
-@Client.on_callback_query(filters.regex("^clone$"))
-async def clone_callback(client, query: CallbackQuery):
-    if not CLONE_MODE:
-        return await query.answer("Clone feature is disabled!", show_alert=True)
-    
-    # New text to guide the user
-    clone_instructions = (
-        "<b>🤖 Create Your Own Clone Bot</b>\n\n"
-        "1. Go to @BotFather and use the `/newbot` command.\n"
-        "2. Follow the steps to create your new bot.\n"
-        "3. @BotFather will give you a token. **Forward that entire message to me here.**\n\n"
-        "I will automatically create your clone."
-    )
-    
-    await query.message.edit_text(
-        clone_instructions,
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton('🔙 Back', callback_data='start')]]
-        )
-    )
 
-# --- The restart function remains the same ---
-async def restart_bots():
+async def stop_clone_bot(bot_id):
+    """Stop a clone bot"""
+    try:
+        if bot_id in active_clones:
+            clone_client = active_clones[bot_id]
+            await clone_client.stop()
+            del active_clones[bot_id]
+            logger.info(f"✅ Clone bot {bot_id} stopped")
+            
+            await clone_db.update_clone(bot_id, {'is_active': False})
+            return True
+        else:
+            logger.warning(f"Clone {bot_id} not found in active clones")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error stopping clone {bot_id}: {e}", exc_info=True)
+        return False
+
+
+async def restart_clone_bot(bot_id):
+    """Restart a specific clone bot"""
+    try:
+        # Stop if running
+        await stop_clone_bot(bot_id)
+        
+        # Get bot data
+        bot_data = await clone_db.get_clone(bot_id)
+        if not bot_data:
+            logger.error(f"Clone {bot_id} not found in database")
+            return False
+        
+        # Start again
+        return await start_clone_bot(bot_data)
+        
+    except Exception as e:
+        logger.error(f"Error restarting clone {bot_id}: {e}", exc_info=True)
+        return False
+
+
+async def restart_all_clones():
+    """Restart all active clone bots from database"""
     if not CLONE_MODE:
-        logger.info("Clone mode is disabled.")
+        logger.info("Clone mode disabled")
         return
     
     try:
-        os.makedirs("clone_sessions", exist_ok=True)
-        clones = await clone_db.get_all_clones()
-        if not clones:
-            logger.info("No clones found in the database to restart.")
-            return
-
-        logger.info(f"🔄 Found {len(clones)} clones in database to restart.")
+        logger.info("🔄 Loading clone bots from database...")
         
-        for clone in clones:
-            try:
-                bot_id = clone['bot_id']
-                bot_token = clone['bot_token']
-                
-                logger.info(f"Starting clone @{clone.get('username', bot_id)}...")
-                
-                client = Client(
-                    f"clone_sessions/clone_{bot_token[:10]}",
-                    API_ID, 
-                    API_HASH,
-                    bot_token=bot_token,
-                    plugins={"root": "clone_plugins"}
-                )
-                
-                await client.start()
-                active_clones[bot_id] = client
-                logger.info(f"✅ Restarted: @{clone['username']}")
-                
-            except Exception as e:
-                logger.error(f"❌ Failed to restart clone @{clone.get('username', 'unknown')}: {e}")
-                continue
-        
-        logger.info(f"✅ Successfully restarted {len(active_clones)} clones.")
-        
-    except Exception as e:
-        logger.error(f"Error in restart_bots: {e}", exc_info=True)
-
+        # Get all active cl
