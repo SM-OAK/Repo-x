@@ -1,3 +1,5 @@
+# clone_db.py
+
 import motor.motor_asyncio
 from config import DB_URI
 from datetime import datetime
@@ -13,7 +15,7 @@ class CloneDatabase:
         clone_data = {
             'bot_id': bot_id,
             'user_id': user_id,
-            'bot_token': bot_token,  # fixed key name
+            'bot_token': bot_token,
             'username': username,
             'name': name,
             'is_active': True,
@@ -22,7 +24,8 @@ class CloneDatabase:
                 'start_message': None,
                 'force_sub_channel': None,
                 'auto_delete': False,
-                'auto_delete_time': 1800,
+                'auto_delete_time': 300,  # Default: 300 seconds (5 minutes)
+                'auto_delete_message': "<b>⚠️ IMPORTANT</b>\n\nThis file will be deleted in <b>{time}</b>.\nPlease forward to Saved Messages!",
                 'no_forward': False,
                 'moderators': [],
                 'mode': 'public'
@@ -55,11 +58,6 @@ class CloneDatabase:
             {'bot_id': bot_id},
             {'$set': {f'settings.{setting_key}': value}}
         )
-        return True
-    
-    async def delete_clone(self, bot_token):
-        """Delete clone by token"""
-        await self.col.delete_one({'bot_token': bot_token})
         return True
     
     async def delete_clone_by_id(self, bot_id):
