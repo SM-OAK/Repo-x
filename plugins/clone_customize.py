@@ -1,15 +1,17 @@
+# clone_customize.py
+
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from database.clone_db import clone_db
-from Script import script
 import logging
+import asyncio
 
 logger = logging.getLogger(__name__)
 
-# Customize clone callback
-@Client.on_callback_query(filters.regex("^customize_"))
-async def customize_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
+# Main Customize Menu
+@Client.on_callback_query(filters.regex(r"^customize_(\d+)$"))
+async def customize_clone_menu(client, query: CallbackQuery):
+    bot_id = int(query.matches[0].group(1))
     clone = await clone_db.get_clone(bot_id)
     
     if not clone:
@@ -24,24 +26,15 @@ async def customize_clone(client, query: CallbackQuery):
             InlineKeyboardButton('🔒 ғᴏʀᴄᴇ sᴜʙ', callback_data=f'set_fsub_{bot_id}')
         ],
         [
-            InlineKeyboardButton('👥 ᴍᴏᴅᴇʀᴀᴛᴏʀs', callback_data=f'set_mods_{bot_id}'),
-            InlineKeyboardButton('⏱️ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', callback_data=f'set_autodel_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🚫 ɴᴏ ғᴏʀᴡᴀʀᴅ', callback_data=f'set_nofw_{bot_id}'),
-            InlineKeyboardButton('🔑 ᴀᴄᴄᴇss ᴛᴏᴋᴇɴ', callback_data=f'view_token_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🔄 ᴍᴏᴅᴇ', callback_data=f'set_mode_{bot_id}'),
-            InlineKeyboardButton('❌ ᴅᴇᴀᴄᴛɪᴠᴀᴛᴇ', callback_data=f'deactivate_{bot_id}')
+            InlineKeyboardButton('⏱️ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', callback_data=f'autodel_menu_{bot_id}')
         ],
         [
             InlineKeyboardButton('📊 sᴛᴀᴛs', callback_data=f'clone_stats_{bot_id}'),
-            InlineKeyboardButton('🔄 ʀᴇsᴛᴀʀᴛ', callback_data=f'restart_{bot_id}')
+            InlineKeyboardButton('🔄 ʀᴇsᴛᴀʀᴛ', callback_data=f'restart_clone_{bot_id}')
         ],
         [
             InlineKeyboardButton('🔙 ʙᴀᴄᴋ', callback_data='clone'),
-            InlineKeyboardButton('🗑️ ᴅᴇʟᴇᴛᴇ', callback_data=f'delete_{bot_id}')
+            InlineKeyboardButton('🗑️ ᴅᴇʟᴇᴛᴇ', callback_data=f'delete_clone_{bot_id}')
         ]
     ]
     
@@ -49,10 +42,127 @@ async def customize_clone(client, query: CallbackQuery):
         f"<b>🛠️ Cᴜsᴛᴏᴍɪᴢᴇ Cʟᴏɴᴇ</b>\n\n"
         f"➜ <b>Nᴀᴍᴇ:</b> {clone['name']}\n"
         f"➜ <b>Usᴇʀɴᴀᴍᴇ:</b> @{clone['username']}\n\n"
-        f"Cᴏɴғɪɢᴜʀᴇ ʏᴏᴜʀ ᴄʟᴏɴᴇ sᴇᴛᴛɪɴɢs ᴜsɪɴɢ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ:"
+        f"Cᴏɴғɪɢᴜʀᴇ ʏᴏᴜʀ ᴄʟᴏɴᴇ sᴇᴛᴛɪngs ᴜsɪɴɢ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ:"
     )
     
     await query.message.edit_text(settings_text, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+# --- Auto Delete Section ---
+
+# Auto Delete Main Menu
+@Client.on_callback_query(filters.regex(r"^autodel_menu_"))
+async def auto_delete_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    
+    status = settings.get('auto_delete', False)
+    delete_time_seconds = settings.get('auto_delete_time', 300)
+    delete_time_minutes = delete_time_seconds // 60
+    
+    text = (
+        f"**Auto Delete**\n\n"
+        f"Automatically delete all messages sent to clone users after {delete_time_minutes} minutes.\n\n"
+        f"**Status:** {'Enabled ✅' if status else 'Disabled ❌'}"
+    )
+    
+    buttons = [
+        [
+            InlineKeyboardButton('⏰ Change Time', callback_data=f'autodel_time_{bot_id}'),
+            InlineKeyboardButton('💬 Message', callback_data=f'autodel_msg_{bot_id}')
+        ],
+        [
+            InlineKeyboardButton('✅ Enable' if not status else '❌ Disable', callback_data=f'autodel_toggle_{bot_id}')
+        ],
+        [
+            InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
+        ]
+    ]
+    
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# Toggle Enable/Disable
+@Client.on_callback_query(filters.regex(r"^autodel_toggle_"))
+async def toggle_auto_delete(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current_status = clone.get('settings', {}).get('auto_delete', False)
+    new_status = not current_status
+    
+    await clone_db.update_clone_setting(bot_id, 'auto_delete', new_status)
+    await query.answer(f"Auto Delete has been {'Enabled' if new_status else 'Disabled'}.")
+    
+    query.data = f"autodel_menu_{bot_id}"
+    await auto_delete_menu(client, query)
+
+# Set Auto Delete Time
+@Client.on_callback_query(filters.regex(r"^autodel_time_"))
+async def set_autodel_time(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    
+    try:
+        ask_msg = await query.message.edit_text(
+            "**Enter the auto-delete time in minutes.**\n\n"
+            "Example: `5` for 5 minutes.\n\n"
+            "Use /cancel to go back."
+        )
+        
+        response = await client.ask(query.from_user.id, timeout=120)
+        
+        if response.text:
+            if response.text == "/cancel":
+                await response.delete()
+                await query.answer("Canceled.")
+            elif response.text.isdigit():
+                minutes = int(response.text)
+                seconds = minutes * 60
+                await clone_db.update_clone_setting(bot_id, 'auto_delete_time', seconds)
+                await query.answer(f"Time set to {minutes} minutes.", show_alert=True)
+                await response.delete()
+            else:
+                await query.answer("Invalid input. Please send a number.", show_alert=True)
+                await response.delete()
+        
+    except asyncio.TimeoutError:
+        await query.answer("Timeout! Process canceled.", show_alert=True)
+    finally:
+        await ask_msg.delete()
+        query.data = f"autodel_menu_{bot_id}"
+        await auto_delete_menu(client, query)
+
+# Set Auto Delete Message
+@Client.on_callback_query(filters.regex(r"^autodel_msg_"))
+async def set_autodel_msg(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    
+    try:
+        ask_msg = await query.message.edit_text(
+            "**Send the new auto-delete warning message.**\n\n"
+            "You can use the placeholder `{time}` which will be replaced with the deletion time (e.g., '5 minutes').\n\n"
+            "Use /cancel to go back."
+        )
+
+        response = await client.ask(query.from_user.id, timeout=300)
+        
+        if response.text:
+            if response.text == "/cancel":
+                 await response.delete()
+                 await query.answer("Canceled.")
+            else:
+                await clone_db.update_clone_setting(bot_id, 'auto_delete_message', response.text)
+                await query.answer("Message updated successfully.", show_alert=True)
+                await response.delete()
+        
+    except asyncio.TimeoutError:
+        await query.answer("Timeout! Process canceled.", show_alert=True)
+    finally:
+        await ask_msg.delete()
+        query.data = f"autodel_menu_{bot_id}"
+        await auto_delete_menu(client, query)
+
+
+# --- Other Settings ---
 
 # Start message setting
 @Client.on_callback_query(filters.regex("^set_start_"))
@@ -91,35 +201,6 @@ async def set_force_sub(client, query: CallbackQuery):
         )
     except:
         await query.message.edit_text("Iɴᴠᴀʟɪᴅ ID!")
-
-# Auto delete toggle
-@Client.on_callback_query(filters.regex("^set_autodel_"))
-async def set_auto_delete(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    current = clone.get('settings', {}).get('auto_delete', False)
-    
-    buttons = [
-        [
-            InlineKeyboardButton('✅ Eɴᴀʙʟᴇ' if not current else '✅ Eɴᴀʙʟᴇᴅ', callback_data=f'toggle_autodel_{bot_id}_true'),
-            InlineKeyboardButton('❌ Dɪsᴀʙʟᴇ' if current else '❌ Dɪsᴀʙʟᴇᴅ', callback_data=f'toggle_autodel_{bot_id}_false')
-        ],
-        [InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]
-    ]
-    
-    await query.message.edit_text(
-        f"<b>⏱️ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ</b>\n\nCᴜʀʀᴇɴᴛ: {'Eɴᴀʙʟᴇᴅ' if current else 'Dɪsᴀʙʟᴇᴅ'}",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-@Client.on_callback_query(filters.regex("^toggle_autodel_"))
-async def toggle_auto_delete(client, query: CallbackQuery):
-    data = query.data.split("_")
-    bot_id = int(data[2])
-    status = data[3] == 'true'
-    await clone_db.update_clone_setting(bot_id, 'auto_delete', status)
-    await query.answer(f"{'Eɴᴀʙʟᴇᴅ' if status else 'Dɪsᴀʙʟᴇᴅ'}!")
-    await set_auto_delete(client, query)
 
 # Clone stats
 @Client.on_callback_query(filters.regex("^clone_stats_"))
