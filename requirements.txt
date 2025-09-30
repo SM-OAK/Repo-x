@@ -1,5 +1,6 @@
-pyrogram
-tgcrypto
+Pyrogram
+TGCrypto
 motor
 aiohttp
 pytz
+pyromod
