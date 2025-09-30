@@ -1,172 +1,115 @@
-from pyrogram import Client, filters
-from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
-from database.clone_db import clone_db
-from Script import script
+import asyncio
 import logging
+from pyrogram import Client
+from pyrogram.errors import ApiIdInvalid, AccessTokenInvalid, UserDeactivated
+from config import API_ID, API_HASH, CLONE_MODE, CLONE_DB_URI
+from database.clone_db import clone_db
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("CloneManager")
 
-# Customize clone callback
-@Client.on_callback_query(filters.regex("^customize_"))
-async def customize_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
-    clone = await clone_db.get_clone(bot_id)
-    
-    if not clone:
-        return await query.answer("Clone not found!", show_alert=True)
-    
-    if clone['user_id'] != query.from_user.id:
-        return await query.answer("This is not your clone!", show_alert=True)
-    
-    buttons = [
-        [
-            InlineKeyboardButton('📝 sᴛᴀʀᴛ ᴍsɢ', callback_data=f'set_start_{bot_id}'),
-            InlineKeyboardButton('🔒 ғᴏʀᴄᴇ sᴜʙ', callback_data=f'set_fsub_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('👥 ᴍᴏᴅᴇʀᴀᴛᴏʀs', callback_data=f'set_mods_{bot_id}'),
-            InlineKeyboardButton('⏱️ ᴀᴜᴛᴏ ᴅᴇʟᴇᴛᴇ', callback_data=f'set_autodel_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🚫 ɴᴏ ғᴏʀᴡᴀʀᴅ', callback_data=f'set_nofw_{bot_id}'),
-            InlineKeyboardButton('🔑 ᴀᴄᴄᴇss ᴛᴏᴋᴇɴ', callback_data=f'view_token_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🔄 ᴍᴏᴅᴇ', callback_data=f'set_mode_{bot_id}'),
-            InlineKeyboardButton('❌ ᴅᴇᴀᴄᴛɪᴠᴀᴛᴇ', callback_data=f'deactivate_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('📊 sᴛᴀᴛs', callback_data=f'clone_stats_{bot_id}'),
-            InlineKeyboardButton('🔄 ʀᴇsᴛᴀʀᴛ', callback_data=f'restart_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('🔙 ʙᴀᴄᴋ', callback_data='clone'),
-            InlineKeyboardButton('🗑️ ᴅᴇʟᴇᴛᴇ', callback_data=f'delete_{bot_id}')
-        ]
-    ]
-    
-    settings_text = (
-        f"<b>🛠️ Cᴜsᴛᴏᴍɪᴢᴇ Cʟᴏɴᴇ</b>\n\n"
-        f"➜ <b>Nᴀᴍᴇ:</b> {clone['name']}\n"
-        f"➜ <b>Usᴇʀɴᴀᴍᴇ:</b> @{clone['username']}\n\n"
-        f"Cᴏɴғɪɢᴜʀᴇ ʏᴏᴜʀ ᴄʟᴏɴᴇ sᴇᴛᴛɪɴɢs ᴜsɪɴɢ ᴛʜᴇ ʙᴜᴛᴛᴏɴs ʙᴇʟᴏᴡ:"
-    )
-    
-    await query.message.edit_text(settings_text, reply_markup=InlineKeyboardMarkup(buttons))
+# Store active clone clients {bot_id: Client}
+active_clones = {}
 
-# Start message setting
-@Client.on_callback_query(filters.regex("^set_start_"))
-async def set_start_msg(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    await query.message.edit_text("<b>📝 Sᴇɴᴅ ʏᴏᴜʀ ᴄᴜsᴛᴏᴍ sᴛᴀʀᴛ ᴍᴇssᴀɢᴇ:</b>\n\nUsᴇ /cancel ᴛᴏ ᴄᴀɴᴄᴇʟ")
+async def start_clone_bot(bot_data):
+    """Start a single clone bot"""
+    bot_id = bot_data['bot_id']
+    bot_token = bot_data['bot_token']
+    user_id = bot_data['user_id']
     
     try:
-        msg = await client.ask(query.message.chat.id, timeout=300)
-        if msg.text == '/cancel':
-            return await query.message.edit_text("Cᴀɴᴄᴇʟᴇᴅ!")
+        logger.info(f"Starting clone bot {bot_id} for user {user_id}")
         
-        await clone_db.update_clone_setting(bot_id, 'start_message', msg.text)
-        await query.message.edit_text(
-            "✅ Sᴛᴀʀᴛ ᴍᴇssᴀɢᴇ ᴜᴘᴅᴀᴛᴇᴅ!",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]])
+        # Create client instance
+        clone_client = Client(
+            name=f"clone_{bot_id}",
+            api_id=API_ID,
+            api_hash=API_HASH,
+            bot_token=bot_token,
+            plugins=dict(root="clone_plugins"),
+            workdir="./clone_sessions"
         )
-    except:
-        await query.message.edit_text("Tɪᴍᴇᴏᴜᴛ!")
+        
+        # Start the client
+        await clone_client.start()
+        
+        # Get bot info
+        me = await clone_client.get_me()
+        logger.info(f"✅ Clone bot @{me.username} started successfully")
+        
+        # Update database with bot info
+        await clone_db.update_clone(bot_id, {
+            'username': me.username,
+            'name': me.first_name,
+            'is_active': True
+        })
+        
+        # Store in active clones
+        active_clones[bot_id] = clone_client
+        
+        return True
+        
+    except AccessTokenInvalid:
+        logger.error(f"❌ Invalid bot token for clone {bot_id}")
+        await clone_db.update_clone(bot_id, {'is_active': False, 'error': 'Invalid token'})
+        return False
+        
+    except ApiIdInvalid:
+        logger.error(f"❌ Invalid API credentials for clone {bot_id}")
+        return False
+        
+    except Exception as e:
+        logger.error(f"❌ Failed to start clone {bot_id}: {e}", exc_info=True)
+        await clone_db.update_clone(bot_id, {'is_active': False, 'error': str(e)})
+        return False
 
-# Force sub setting
-@Client.on_callback_query(filters.regex("^set_fsub_"))
-async def set_force_sub(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    await query.message.edit_text("<b>🔒 Sᴇɴᴅ ᴄʜᴀɴɴᴇʟ ID:</b>\n\nExᴀᴍᴘʟᴇ: <code>-100123456789</code>\n\nUsᴇ /cancel ᴛᴏ ᴄᴀɴᴄᴇʟ")
+
+async def stop_clone_bot(bot_id):
+    """Stop a clone bot"""
+    try:
+        if bot_id in active_clones:
+            clone_client = active_clones[bot_id]
+            await clone_client.stop()
+            del active_clones[bot_id]
+            logger.info(f"✅ Clone bot {bot_id} stopped")
+            
+            await clone_db.update_clone(bot_id, {'is_active': False})
+            return True
+        else:
+            logger.warning(f"Clone {bot_id} not found in active clones")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error stopping clone {bot_id}: {e}", exc_info=True)
+        return False
+
+
+async def restart_clone_bot(bot_id):
+    """Restart a specific clone bot"""
+    try:
+        # Stop if running
+        await stop_clone_bot(bot_id)
+        
+        # Get bot data
+        bot_data = await clone_db.get_clone(bot_id)
+        if not bot_data:
+            logger.error(f"Clone {bot_id} not found in database")
+            return False
+        
+        # Start again
+        return await start_clone_bot(bot_data)
+        
+    except Exception as e:
+        logger.error(f"Error restarting clone {bot_id}: {e}", exc_info=True)
+        return False
+
+
+async def restart_all_clones():
+    """Restart all active clone bots from database"""
+    if not CLONE_MODE:
+        logger.info("Clone mode disabled")
+        return
     
     try:
-        msg = await client.ask(query.message.chat.id, timeout=300)
-        if msg.text == '/cancel':
-            return await query.message.edit_text("Cᴀɴᴄᴇʟᴇᴅ!")
+        logger.info("🔄 Loading clone bots from database...")
         
-        await clone_db.update_clone_setting(bot_id, 'force_sub_channel', int(msg.text))
-        await query.message.edit_text(
-            "✅ Fᴏʀᴄᴇ sᴜʙsᴄʀɪᴘᴛɪᴏɴ ᴜᴘᴅᴀᴛᴇᴅ!",
-            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]])
-        )
-    except:
-        await query.message.edit_text("Iɴᴠᴀʟɪᴅ ID!")
-
-# Auto delete toggle
-@Client.on_callback_query(filters.regex("^set_autodel_"))
-async def set_auto_delete(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    current = clone.get('settings', {}).get('auto_delete', False)
-    
-    buttons = [
-        [
-            InlineKeyboardButton('✅ Eɴᴀʙʟᴇ' if not current else '✅ Eɴᴀʙʟᴇᴅ', callback_data=f'toggle_autodel_{bot_id}_true'),
-            InlineKeyboardButton('❌ Dɪsᴀʙʟᴇ' if current else '❌ Dɪsᴀʙʟᴇᴅ', callback_data=f'toggle_autodel_{bot_id}_false')
-        ],
-        [InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]
-    ]
-    
-    await query.message.edit_text(
-        f"<b>⏱️ Aᴜᴛᴏ Dᴇʟᴇᴛᴇ</b>\n\nCᴜʀʀᴇɴᴛ: {'Eɴᴀʙʟᴇᴅ' if current else 'Dɪsᴀʙʟᴇᴅ'}",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-@Client.on_callback_query(filters.regex("^toggle_autodel_"))
-async def toggle_auto_delete(client, query: CallbackQuery):
-    data = query.data.split("_")
-    bot_id = int(data[2])
-    status = data[3] == 'true'
-    await clone_db.update_clone_setting(bot_id, 'auto_delete', status)
-    await query.answer(f"{'Eɴᴀʙʟᴇᴅ' if status else 'Dɪsᴀʙʟᴇᴅ'}!")
-    await set_auto_delete(client, query)
-
-# Clone stats
-@Client.on_callback_query(filters.regex("^clone_stats_"))
-async def clone_stats(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    users = await clone_db.get_clone_users_count(bot_id)
-    
-    await query.message.edit_text(
-        f"<b>📊 Cʟᴏɴᴇ Sᴛᴀᴛs</b>\n\n"
-        f"🤖 Bᴏᴛ: @{clone['username']}\n"
-        f"👥 Usᴇʀs: {users}\n"
-        f"📅 Cʀᴇᴀᴛᴇᴅ: {clone.get('created_at', 'N/A')}",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data=f'customize_{bot_id}')]])
-    )
-
-# Restart clone
-@Client.on_callback_query(filters.regex("^restart_"))
-async def restart_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
-    await query.answer("Rᴇsᴛᴀʀᴛɪɴɢ ᴄʟᴏɴᴇ...", show_alert=True)
-    # Add restart logic here
-
-# Delete clone
-@Client.on_callback_query(filters.regex("^delete_(?!clone)"))
-async def delete_clone_confirm(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
-    
-    buttons = [
-        [
-            InlineKeyboardButton('✅ Yᴇs', callback_data=f'confirm_delete_{bot_id}'),
-            InlineKeyboardButton('❌ Nᴏ', callback_data=f'customize_{bot_id}')
-        ]
-    ]
-    
-    await query.message.edit_text(
-        "⚠️ <b>Aʀᴇ ʏᴏᴜ sᴜʀᴇ?</b>\n\nTʜɪs ᴡɪʟʟ ᴘᴇʀᴍᴀɴᴇɴᴛʟʏ ᴅᴇʟᴇᴛᴇ ʏᴏᴜʀ ᴄʟᴏɴᴇ!",
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
-
-@Client.on_callback_query(filters.regex("^confirm_delete_"))
-async def confirm_delete_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    
-    if clone['user_id'] != query.from_user.id:
-        return await query.answer("Access denied!", show_alert=True)
-    
-    await clone_db.delete_clone_by_id(bot_id)
-    await query.message.edit_text("✅ Cʟᴏɴᴇ ᴅᴇʟᴇᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!")
+        # Get all active cl
