@@ -13,7 +13,7 @@ class CloneDatabase:
         clone_data = {
             'bot_id': bot_id,
             'user_id': user_id,
-            'token': bot_token,
+            'bot_token': bot_token,  # fixed key name
             'username': username,
             'name': name,
             'is_active': True,
@@ -35,19 +35,19 @@ class CloneDatabase:
         """Get clone by bot_id"""
         return await self.col.find_one({'bot_id': bot_id})
     
-    async def get_clone_by_token(self, token):
+    async def get_clone_by_token(self, bot_token):
         """Get clone by token"""
-        return await self.col.find_one({'token': token})
+        return await self.col.find_one({'bot_token': bot_token})
     
-    async def get_user_clones(self, user_id):
-        """Get all clones by user"""
-        clones = self.col.find({'user_id': user_id})
-        return await clones.to_list(length=None)
+    async def get_clones_by_user(self, user_id):
+        """Get all clones by specific user"""
+        clones_cursor = self.col.find({'user_id': user_id})
+        return await clones_cursor.to_list(length=None)
     
     async def get_all_clones(self):
         """Get all clones"""
-        clones = self.col.find({})
-        return await clones.to_list(length=None)
+        clones_cursor = self.col.find({})
+        return await clones_cursor.to_list(length=None)
     
     async def update_clone_setting(self, bot_id, setting_key, value):
         """Update specific clone setting"""
@@ -57,20 +57,15 @@ class CloneDatabase:
         )
         return True
     
-    async def delete_clone(self, token):
+    async def delete_clone(self, bot_token):
         """Delete clone by token"""
-        await self.col.delete_one({'token': token})
+        await self.col.delete_one({'bot_token': bot_token})
         return True
     
     async def delete_clone_by_id(self, bot_id):
         """Delete clone by bot_id"""
         await self.col.delete_one({'bot_id': bot_id})
         return True
-    
-    async def get_clone_users_count(self, bot_id):
-        """Get user count for specific clone"""
-        # This would need a separate users collection per clone
-        return 0
     
     async def toggle_clone_status(self, bot_id, status):
         """Activate/Deactivate clone"""
@@ -79,5 +74,11 @@ class CloneDatabase:
             {'$set': {'is_active': status}}
         )
         return True
+    
+    async def get_clone_users_count(self, bot_id):
+        """Get user count for specific clone"""
+        # Placeholder for future per-clone user tracking
+        return 0
 
+# Create instance
 clone_db = CloneDatabase(DB_URI)
