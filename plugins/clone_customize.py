@@ -2,7 +2,6 @@ import re
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from database.clone_db import clone_db
-from shared import ACTIVE_CLONES
 import logging
 
 logger = logging.getLogger(__name__)
