@@ -26,7 +26,7 @@ from TechVJ.server import web_server
 from TechVJ.bot import StreamBot
 from TechVJ.utils.keepalive import ping_server
 from TechVJ.bot.clients import initialize_clients
-from plugins.clone_manager import restart_bots
+from plugins.clone_manager import start_bots # CORRECTED: Changed 'restart_bots' to 'start_bots'
 
 # Load main bot plugins
 ppath = "plugins/*.py"
@@ -93,7 +93,7 @@ async def start():
     # Restart existing clone bots if enabled
     if CLONE_MODE:
         print("\n🔄 Restarting existing clone bots...")
-        await restart_bots()
+        await start_bots() # CORRECTED: Changed 'restart_bots()' to 'start_bots()'
     
     print("\n✅ Bot Started Successfully!")
     print(f"👤 Bot Username: @{bot_info.username}")
