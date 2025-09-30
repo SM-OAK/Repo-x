@@ -42,7 +42,7 @@ async def start_conversation_callback(client, query: CallbackQuery):
     if action == 'add':
         await query.message.edit_text(
             "<b>Fᴏʀᴡᴀʀᴅ Tʜᴇ Mᴇssᴀɢᴇ Fʀᴏᴍ @BotFather\n\n"
-            "Tʜɪs ᴍᴇssᴀGᴇ ᴍᴜsᴛ ᴄᴏɴᴛᴀɪɴ ʏᴏᴜʀ ʙᴏᴛ ᴛᴏᴋᴇɴ.\n\n"
+            "Tʜɪs ᴍᴇssᴀɢᴇ ᴍᴜsᴛ ᴄᴏɴᴛᴀɪɴ ʏᴏᴜʀ ʙᴏᴛ ᴛᴏᴋᴇɴ.\n\n"
             "Usᴇ /cancel ᴛᴏ sᴛᴏᴘ ᴛʜɪs ᴘʀᴏᴄᴇss.</b>"
         )
         user_steps[user_id] = "awaiting_add_token"
@@ -64,7 +64,7 @@ async def cancel_conversation(client, message: Message):
         ]]))
 
 # Handler for receiving the token message
-@Client.on_message(filters.private & ~filters.command("cancel"))
+@Client.on_message(filters.private & ~filters.command())
 async def conversation_handler(client, message: Message):
     user_id = message.from_user.id
     step = user_steps.get(user_id)
@@ -123,7 +123,6 @@ async def conversation_handler(client, message: Message):
 # --- Admin Handlers (Unchanged) ---
 @Client.on_callback_query(filters.regex("^manage_clones$"))
 async def manage_clones_callback(client, query: CallbackQuery):
-    # This function remains the same
     if query.from_user.id not in ADMINS:
         return await query.answer("Admin only!", show_alert=True)
     clones = await clone_db.get_all_clones()
