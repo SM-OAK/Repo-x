@@ -220,4 +220,3 @@ async def cancel_clone_process(client: Client, query: CallbackQuery):
             InlineKeyboardButton('🔙 Back to Clone Menu', callback_data='clone')
         ]])
     )
-ಠ_ಠ
