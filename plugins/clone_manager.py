@@ -64,25 +64,31 @@ async def cancel_conversation(client, message: Message):
         ]]))
 
 # Handler for receiving the token message
-@Client.on_message(filters.private & ~filters.command())
+# FIXED: Changed the filter to be more reliable
+@Client.on_message(filters.private)
 async def conversation_handler(client, message: Message):
     user_id = message.from_user.id
-    step = user_steps.get(user_id)
 
+    # FIXED: Check if the message is a command and ignore it
+    # This allows other command handlers (like /start) to work correctly
+    if message.text and message.text.startswith("/"):
+        if message.text != "/cancel": # Allow /cancel to be processed by its own handler
+             return
+
+    step = user_steps.get(user_id)
     if not step:
         return # Not in a conversation
 
     # --- ADD CLONE LOGIC ---
     if step == "awaiting_add_token":
-        # Clear step immediately
-        del user_steps[user_id]
+        del user_steps[user_id] # Clear step immediately
 
         if not (message.forward_from and message.forward_from.id == 93372553):
             return await message.reply('Nᴏᴛ ғᴏʀᴡᴀʀᴅᴇᴅ ғʀᴏᴍ @BotFather! 😑', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data='clone')]]))
 
         try:
             bot_token = re.findall(r"\b(\d+:[A-Za-z0-9_-]+)\b", message.text)[0]
-        except IndexError:
+        except (IndexError, TypeError):
             return await message.reply('Iɴᴠᴀʟɪᴅ ᴛᴏᴋᴇɴ ғᴏʀᴍᴀᴛ! 😕', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data='clone')]]))
 
         msg = await message.reply_text("⏳ Cʀᴇᴀᴛɪɴɢ ʏᴏᴜʀ ᴄʟᴏɴᴇ ʙᴏᴛ...")
@@ -104,8 +110,7 @@ async def conversation_handler(client, message: Message):
 
     # --- DELETE CLONE LOGIC ---
     elif step == "awaiting_delete_token":
-        # Clear step immediately
-        del user_steps[user_id]
+        del user_steps[user_id] # Clear step immediately
 
         bot_token_match = re.search(r'(\d+:[A-Za-z0-9_-]+)', message.text)
         if not bot_token_match:
@@ -120,7 +125,7 @@ async def conversation_handler(client, message: Message):
         await clone_db.delete_clone(bot_token)
         await message.reply("✅ Cʟᴏɴᴇ ᴅᴇʟᴇᴛᴇᴅ sᴜᴄᴄᴇssғᴜʟʟʏ!", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('🔙 Bᴀᴄᴋ', callback_data='clone')]]))
 
-# --- Admin Handlers (Unchanged) ---
+# --- Admin Handlers ---
 @Client.on_callback_query(filters.regex("^manage_clones$"))
 async def manage_clones_callback(client, query: CallbackQuery):
     if query.from_user.id not in ADMINS:
