@@ -1,14 +1,15 @@
 import asyncio
 import logging
 from pyrogram import Client
-from pyrogram.errors import ApiIdInvalid, AccessTokenInvalid, UserDeactivated
-from config import API_ID, API_HASH, CLONE_MODE, CLONE_DB_URI
+from pyrogram.errors import ApiIdInvalid, AccessTokenInvalid
+from config import API_ID, API_HASH, CLONE_MODE
 from database.clone_db import clone_db
 
 logger = logging.getLogger("CloneManager")
 
 # Store active clone clients {bot_id: Client}
 active_clones = {}
+
 
 async def start_clone_bot(bot_data):
     """Start a single clone bot"""
@@ -112,4 +113,22 @@ async def restart_all_clones():
     try:
         logger.info("🔄 Loading clone bots from database...")
         
-        # Get all active cl
+        # Get all active clones from DB
+        all_clones = await clone_db.get_all_clones()
+        if not all_clones:
+            logger.info("No clones found in database")
+            return
+        
+        # Restart them one by one
+        for bot_data in all_clones:
+            bot_id = bot_data['bot_id']
+            if bot_data.get("is_active"):
+                logger.info(f"Restarting clone {bot_id}")
+                await restart_clone_bot(bot_id)
+            else:
+                logger.info(f"Clone {bot_id} is inactive, skipping.")
+                
+        logger.info("✅ All clone bots processed")
+        
+    except Exception as e:
+        logger.error(f"Error restarting all clones: {e}", exc_info=True)
