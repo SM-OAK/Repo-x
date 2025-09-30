@@ -13,9 +13,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-@Client.on_message(filters.command("start") & filters.private)
+@Client.on_message(filters.command("start") & filters.private, group=0)
 async def start(client, message):
+    """Main bot start command - highest priority (group=0)"""
     try:
+        # Add user to database
         if not await db.is_user_exist(message.from_user.id):
             await db.add_user(message.from_user.id, message.from_user.first_name)
             if LOG_CHANNEL:
@@ -27,6 +29,7 @@ async def start(client, message):
                 except Exception as e:
                     logger.error(f"Error sending log: {e}")
 
+        # Handle deep links (file access)
         if len(message.command) > 1:
             if not await handle_force_sub(client, message):
                 return
@@ -47,6 +50,7 @@ async def start(client, message):
                 await message.reply("❌ Invalid or expired link.")
                 return
 
+        # Show admin or user menu
         if message.from_user.id in ADMINS:
             buttons = [
                 [InlineKeyboardButton('👤 Users', callback_data='stats'),
@@ -74,3 +78,41 @@ async def start(client, message):
     except Exception as e:
         logger.error(f"Error in start command: {e}")
         await message.reply("❌ An error occurred.")
+
+
+@Client.on_message(filters.command(["help", "about"]) & filters.private, group=0)
+async def help_about(client, message):
+    """Handle help and about commands for main bot"""
+    command = message.command[0].lower()
+    buttons = [[InlineKeyboardButton('🏠 Home', callback_data='start')]]
+    
+    if command == "help":
+        await message.reply(script.HELP_TXT, reply_markup=InlineKeyboardMarkup(buttons))
+    else:
+        await message.reply(script.ABOUT_TXT, reply_markup=InlineKeyboardMarkup(buttons))
+
+
+@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private & filters.user(ADMINS), group=0)
+async def handle_file_upload(client, message):
+    """Handle file uploads for main bot (admin only)"""
+    if not LOG_CHANNEL:
+        return await message.reply("<b>❌ File storage not configured!</b>")
+    
+    try:
+        post = await message.copy(LOG_CHANNEL)
+        file_id = str(post.id)
+        bot_username = (await client.get_me()).username
+        string = f'file_{file_id}'
+        encoded = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
+        share_link = f"https://t.me/{bot_username}?start={encoded}"
+        
+        await message.reply(
+            f"<b>⭕ Here is your link:\n\n🔗 Link: {share_link}</b>",
+            quote=True
+        )
+    except Exception as e:
+        logger.error(f"Upload error: {e}")
+        await message.reply("<b>❌ Failed to generate link!</b>")
+
+
+logger.info("✅ Main bot commands loaded (group=0)")
