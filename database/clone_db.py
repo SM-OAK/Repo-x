@@ -9,20 +9,14 @@ class CloneDatabase:
         self.col = self.db.bots
     
     async def add_clone(self, bot_id, user_id, bot_token, username, name):
-        """Add or update clone in the database to prevent duplicates"""
-        
-        # Data that can be updated if the bot is re-added
-        update_data = {
+        """Add new clone to database"""
+        clone_data = {
+            'bot_id': bot_id,
             'user_id': user_id,
             'token': bot_token,
             'username': username,
             'name': name,
-            'is_active': True
-        }
-        
-        # Data that should only be set when the bot is first created
-        new_clone_data = {
-            'bot_id': bot_id,
+            'is_active': True,
             'created_at': datetime.now(),
             'settings': {
                 'start_message': None,
@@ -34,16 +28,7 @@ class CloneDatabase:
                 'mode': 'public'
             }
         }
-
-        # Use update_one with upsert=True to prevent duplicates
-        await self.col.update_one(
-            {'bot_id': bot_id},  # Filter by the unique bot_id
-            {
-                '$set': update_data,
-                '$setOnInsert': new_clone_data
-            },
-            upsert=True  # This prevents creating duplicate entries
-        )
+        await self.col.insert_one(clone_data)
         return True
     
     async def get_clone(self, bot_id):
