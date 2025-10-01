@@ -1,3 +1,4 @@
+# plugins/clone_manager.py
 import re
 import os
 import logging
