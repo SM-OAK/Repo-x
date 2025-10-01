@@ -398,11 +398,30 @@ async def bot_status(client, query: CallbackQuery):
 # -----------------------------
 # RESTART CLONE BOT
 # -----------------------------
-@Client.on_callback_query(filters.regex("^restart_"))
+@@Client.on_callback_query(filters.regex("^restart_"))
 async def restart_clone(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[1])
-    # Implement your restart logic here
-    await query.answer("🔄 Clone bot restart initiated!", show_alert=True)
+    clone = await clone_db.get_clone(bot_id)
+
+    if not clone:
+        return await query.answer("❌ Clone not found!", show_alert=True)
+
+    # Agar tumhare paas active clone client dictionary hai
+    # Example: active_clones = {bot_id: Client(...)}
+
+    from main import active_clones  # jahan active clones store ho
+    clone_client = active_clones.get(bot_id)
+
+    if clone_client:
+        try:
+            await clone_client.stop()
+            await clone_client.start()
+            await query.answer("🔄 Clone bot restarted successfully!", show_alert=True)
+        except Exception as e:
+            await query.answer(f"❌ Restart failed: {e}", show_alert=True)
+    else:
+        await query.answer("❌ Clone client not active!", show_alert=True)
+
     await customize_clone(client, query)
 
 # -----------------------------
