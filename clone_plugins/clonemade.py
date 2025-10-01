@@ -62,16 +62,32 @@ async def get_start_text(client, user_mention):
     """Get custom start text or default"""
     settings = await get_clone_settings(client)
     custom_text = settings.get('start_message') if settings else None
-    return custom_text if custom_text else DEFAULT_START_TEXT.format(user_mention)
+    
+    # Replace {mention} placeholder
+    if custom_text:
+        return custom_text.replace('{mention}', user_mention)
+    return DEFAULT_START_TEXT.format(user_mention)
 
-def get_start_keyboard():
-    """Get keyboard for start message"""
-    return InlineKeyboardMarkup([
+async def get_start_keyboard(client):
+    """Get keyboard for start message with custom button if set"""
+    settings = await get_clone_settings(client)
+    buttons = [
         [
             InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='clone_help'),
             InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='clone_about')
         ]
-    ])
+    ]
+    
+    # Add custom button if set
+    custom_btn = settings.get('start_button') if settings else None
+    if custom_btn and ' - ' in custom_btn:
+        try:
+            btn_text, btn_url = custom_btn.split(' - ', 1)
+            buttons.append([InlineKeyboardButton(btn_text.strip(), url=btn_url.strip())])
+        except:
+            pass
+    
+    return InlineKeyboardMarkup(buttons)
 
 async def check_force_sub(client, user_id):
     """Check if user is subscribed to force sub channels"""
@@ -118,25 +134,37 @@ async def send_file_to_user(client, message, file_id):
     """Retrieve and send file to user with custom settings"""
     settings = await get_clone_settings(client)
     
-    # Get log channel (custom or default)
-    log_channel = settings.get('log_channel') if settings else None
-    if not log_channel:
-        log_channel = LOG_CHANNEL
+    # Get DB channel (where files are stored)
+    db_channel = settings.get('db_channel') if settings else None
+    if not db_channel:
+        db_channel = LOG_CHANNEL
     
-    if not log_channel:
-        await message.reply("<b>❌ Log channel not configured!</b>")
+    if not db_channel:
+        await message.reply("<b>❌ File storage not configured!</b>")
         return False
     
     try:
-        file_msg = await client.get_messages(log_channel, file_id)
+        file_msg = await client.get_messages(db_channel, file_id)
         
         if not file_msg or not file_msg.media:
             await message.reply("<b>❌ Fɪʟᴇ ɴᴏᴛ ғᴏᴜɴᴅ!</b>")
             return False
         
+        # Custom caption if set
+        caption = file_msg.caption
+        custom_caption = settings.get('file_caption') if settings else None
+        if custom_caption:
+            caption = custom_caption.replace('{filename}', file_msg.document.file_name if file_msg.document else 'File')
+            caption = caption.replace('{size}', str(file_msg.document.file_size) if file_msg.document else '0')
+            caption = caption.replace('{caption}', file_msg.caption or '')
+        
+        # Check protect mode
+        protect = settings.get('protect_content', False) if settings else False
+        
         sent_msg = await file_msg.copy(
             chat_id=message.from_user.id,
-            caption=file_msg.caption
+            caption=caption,
+            protect_content=protect
         )
         
         # Auto-delete based on settings
@@ -162,6 +190,11 @@ async def send_file_to_user(client, message, file_id):
             except:
                 pass
         
+        # Update last used time
+        if DB_LOADED:
+            bot_info = await client.get_me()
+            await clone_db.update_last_used(bot_info.id)
+        
         return True
         
     except Exception as e:
@@ -170,24 +203,33 @@ async def send_file_to_user(client, message, file_id):
         return False
 
 # ==================== START COMMAND ====================
-@Client.on_message(filters.command("start") & filters.private)
+@Client.on_message(filters.command("start") & filters.private, group=1)
 async def clone_start(client, message):
     """Clone bot start handler"""
     print(f"Clone: Start command received from {message.from_user.id}")
     
     try:
+        # Check maintenance mode
+        settings = await get_clone_settings(client)
+        if settings and settings.get('maintenance', False):
+            return await message.reply(
+                "<b>🔧 Maintenance Mode</b>\n\n"
+                "Bot is under maintenance. Please try again later."
+            )
+        
         # Check force subscribe
         if DB_LOADED:
             is_subscribed, channels = await check_force_sub(client, message.from_user.id)
             if not is_subscribed and channels:
                 buttons = []
                 for channel in channels:
-                    buttons.append([InlineKeyboardButton(f'📢 Join Channel', url=f'https://t.me/{channel.replace("@", "")}')])
+                    ch_name = channel.replace('@', '')
+                    buttons.append([InlineKeyboardButton(f'📢 Join {ch_name}', url=f'https://t.me/{ch_name}')])
                 buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
                 
                 return await message.reply(
-                    "<b>⚠️ You must join our channels to use this bot!</b>\n\n"
-                    "Click the buttons below to join, then click 'Try Again'.",
+                    "<b>⚠️ Join Required Channels!</b>\n\n"
+                    "You must join our channels to use this bot.",
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
         
@@ -212,63 +254,25 @@ async def clone_start(client, message):
         
         # Regular start message with custom text
         start_text = await get_start_text(client, message.from_user.mention)
-        await message.reply(start_text, reply_markup=get_start_keyboard())
-        print(f"Clone: Start message sent successfully to {message.from_user.id}")
+        keyboard = await get_start_keyboard(client)
+        
+        # Send with photo if set
+        start_photo = settings.get('start_photo') if settings else None
+        if start_photo:
+            try:
+                await message.reply_photo(start_photo, caption=start_text, reply_markup=keyboard)
+            except:
+                await message.reply(start_text, reply_markup=keyboard)
+        else:
+            await message.reply(start_text, reply_markup=keyboard)
+        
+        print(f"Clone: Start message sent to {message.from_user.id}")
         
     except Exception as e:
-        print(f"Clone: Error in start command - {e}")
+        print(f"Clone: Error in start - {e}")
         import traceback
         traceback.print_exc()
-        await message.reply("<b>❌ An error occurred. Please try again later.</b>")
-
-# ==================== CUSTOMIZATION CALLBACKS ====================
-@Client.on_callback_query(filters.regex("^set_start_"))
-async def set_start_message(client, query: CallbackQuery):
-    """Set custom start message"""
-    try:
-        bot_id = int(query.data.split("_")[2])
-        
-        await query.message.edit_text(
-            "<b>📝 Send your custom START message</b>\n\n"
-            "Use {mention} for user mention\n"
-            "Use /cancel to cancel",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
-            ]])
-        )
-        
-        user_states[query.from_user.id] = {
-            'action': 'awaiting_start_msg',
-            'bot_id': bot_id
-        }
-        await query.answer()
-    except Exception as e:
-        print(f"Clone: Error in set_start - {e}")
-        await query.answer("Error occurred!", show_alert=True)
-
-@Client.on_callback_query(filters.regex("^set_fsub_"))
-async def set_force_sub(client, query: CallbackQuery):
-    """Set force subscription channel"""
-    try:
-        bot_id = int(query.data.split("_")[2])
-        
-        await query.message.edit_text(
-            "<b>🔒 Send channel username or ID</b>\n\n"
-            "Example: @yourchannel or -100123456789\n"
-            "Use /cancel to cancel",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
-            ]])
-        )
-        
-        user_states[query.from_user.id] = {
-            'action': 'awaiting_fsub',
-            'bot_id': bot_id
-        }
-        await query.answer()
-    except Exception as e:
-        print(f"Clone: Error in set_fsub - {e}")
-        await query.answer("Error occurred!", show_alert=True)
+        await message.reply("<b>❌ Error occurred!</b>")
 
 # ==================== CALLBACKS ====================
 @Client.on_callback_query(filters.regex("^clone_"))
@@ -283,11 +287,12 @@ async def clone_callbacks(client, query: CallbackQuery):
             if not is_subscribed and channels:
                 buttons = []
                 for channel in channels:
-                    buttons.append([InlineKeyboardButton(f'📢 Join Channel', url=f'https://t.me/{channel.replace("@", "")}')])
+                    ch_name = channel.replace('@', '')
+                    buttons.append([InlineKeyboardButton(f'📢 Join {ch_name}', url=f'https://t.me/{ch_name}')])
                 buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
                 
                 return await query.message.edit_text(
-                    "<b>⚠️ You must join our channels to use this bot!</b>",
+                    "<b>⚠️ Join Required Channels!</b>",
                     reply_markup=InlineKeyboardMarkup(buttons)
                 )
         
@@ -305,7 +310,8 @@ async def clone_callbacks(client, query: CallbackQuery):
         
         elif data == "clone_start":
             start_text = await get_start_text(client, query.from_user.mention)
-            await query.message.edit_text(start_text, reply_markup=get_start_keyboard())
+            keyboard = await get_start_keyboard(client)
+            await query.message.edit_text(start_text, reply_markup=keyboard)
         
         await query.answer()
     except Exception as e:
@@ -313,7 +319,7 @@ async def clone_callbacks(client, query: CallbackQuery):
         await query.answer("Error occurred!", show_alert=True)
 
 # ==================== HELP/ABOUT COMMANDS ====================
-@Client.on_message(filters.command(["help", "about"]) & filters.private)
+@Client.on_message(filters.command(["help", "about"]) & filters.private, group=1)
 async def clone_help_about(client, message):
     """Handle help and about commands"""
     try:
@@ -330,72 +336,17 @@ async def clone_help_about(client, message):
     except Exception as e:
         print(f"Clone: Error in help/about - {e}")
 
-# ==================== TEXT MESSAGE HANDLER ====================
-@Client.on_message(filters.text & filters.private & ~filters.command(["start", "help", "about"]))
-async def handle_clone_settings(client, message):
-    """Handle custom settings input"""
-    user_id = message.from_user.id
-    
-    if user_id not in user_states:
-        return
-    
-    try:
-        state = user_states[user_id]
-        
-        if message.text == "/cancel":
-            del user_states[user_id]
-            return await message.reply(
-                "❌ Cancelled!",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton('🔙 Back', callback_data=f'customize_{state["bot_id"]}')
-                ]])
-            )
-        
-        if state['action'] == 'awaiting_start_msg':
-            bot_id = state['bot_id']
-            if DB_LOADED:
-                clone = await clone_db.get_clone(bot_id)
-                settings = clone.get('settings', {})
-                settings['start_message'] = message.text.html
-                await clone_db.update_clone(bot_id, {'settings': settings})
-            
-            del user_states[user_id]
-            await message.reply(
-                "✅ <b>Start message updated!</b>",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton('🔙 Back to Settings', callback_data=f'customize_{bot_id}')
-                ]])
-            )
-        
-        elif state['action'] == 'awaiting_fsub':
-            bot_id = state['bot_id']
-            channel = message.text.strip()
-            
-            if DB_LOADED:
-                clone = await clone_db.get_clone(bot_id)
-                settings = clone.get('settings', {})
-                if 'force_sub_channels' not in settings:
-                    settings['force_sub_channels'] = []
-                settings['force_sub_channels'].append(channel)
-                await clone_db.update_clone(bot_id, {'settings': settings})
-            
-            del user_states[user_id]
-            await message.reply(
-                f"✅ <b>Force sub channel added:</b> {channel}",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton('🔙 Back to Settings', callback_data=f'customize_{bot_id}')
-                ]])
-            )
-    except Exception as e:
-        print(f"Clone: Error handling settings - {e}")
-
 # ==================== FILE UPLOAD ====================
-@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private)
+@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private, group=1)
 async def clone_file_upload(client, message):
     """Handle file uploads in clone bot"""
     
     try:
         settings = await get_clone_settings(client)
+        
+        # Check maintenance mode
+        if settings and settings.get('maintenance', False):
+            return await message.reply("<b>🔧 Bot is under maintenance!</b>")
         
         # Check if public use is enabled
         if settings and not settings.get('public_use', True):
@@ -406,37 +357,70 @@ async def clone_file_upload(client, message):
             admins = settings.get('admins', [])
             if message.from_user.id != clone['user_id'] and message.from_user.id not in admins:
                 return await message.reply(
-                    "<b>⚠️ This bot is in private mode!</b>\n\n"
-                    "Only the owner and admins can upload files."
+                    "<b>⚠️ Private Mode Active!</b>\n\n"
+                    "Only owner and admins can upload files."
                 )
         
-        # Get log channel
-        log_channel = settings.get('log_channel') if settings else None
-        if not log_channel:
-            log_channel = LOG_CHANNEL
+        # Check file type restrictions
+        allowed_types = settings.get('allowed_types', ['all']) if settings else ['all']
+        if 'all' not in allowed_types:
+            file_type = None
+            if message.document:
+                file_type = 'document'
+            elif message.video:
+                file_type = 'video'
+            elif message.audio:
+                file_type = 'audio'
+            elif message.photo:
+                file_type = 'photo'
+            
+            if file_type and file_type not in allowed_types:
+                return await message.reply(f"<b>❌ {file_type.title()} files not allowed!</b>")
         
-        if not log_channel:
-            return await message.reply(
-                "<b>❌ Fɪʟᴇ sᴛᴏʀᴀɢᴇ ɴᴏᴛ ᴄᴏɴғɪɢᴜʀᴇᴅ!</b>"
-            )
+        # Check file size limit
+        file_size_limit = settings.get('file_size_limit', 0) if settings else 0
+        if file_size_limit > 0:
+            file_size_mb = 0
+            if message.document:
+                file_size_mb = message.document.file_size / (1024 * 1024)
+            elif message.video:
+                file_size_mb = message.video.file_size / (1024 * 1024)
+            
+            if file_size_mb > file_size_limit:
+                return await message.reply(f"<b>❌ File too large! Max: {file_size_limit}MB</b>")
         
-        post = await message.copy(log_channel)
+        # Get DB channel (where files are stored)
+        db_channel = settings.get('db_channel') if settings else None
+        if not db_channel:
+            db_channel = LOG_CHANNEL
+        
+        if not db_channel:
+            return await message.reply("<b>❌ File storage not configured!</b>")
+        
+        # Copy file to DB channel
+        post = await message.copy(db_channel)
         file_id = str(post.id)
         
+        # Generate shareable link
         bot_username = (await client.get_me()).username
         string = f'file_{file_id}'
         encoded = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
         share_link = f"https://t.me/{bot_username}?start={encoded}"
         
         await message.reply(
-            f"<b>⭕ Hᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n"
-            f"🔗 Lɪɴᴋ: {share_link}</b>"
+            f"<b>✅ File Uploaded Successfully!\n\n"
+            f"🔗 Share Link:</b>\n<code>{share_link}</code>"
         )
+        
+        # Update last used
+        if DB_LOADED:
+            bot_info = await client.get_me()
+            await clone_db.update_last_used(bot_info.id)
         
     except Exception as e:
         print(f"Clone: Upload error - {e}")
         import traceback
         traceback.print_exc()
-        await message.reply("<b>❌ Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ʟɪɴᴋ!</b>")
+        await message.reply("<b>❌ Failed to upload file!</b>")
 
-print("✅ Enhanced clone commands loaded with customization features!")
+print("✅ Enhanced clone commands loaded with full customization support!")
