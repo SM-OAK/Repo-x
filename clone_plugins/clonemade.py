@@ -54,7 +54,8 @@ async def get_clone_settings(client):
         bot_info = await client.get_me()
         clone = await clone_db.get_clone(bot_info.id)
         return clone.get('settings', {}) if clone else {}
-    except:
+    except Exception as e:
+        print(f"Clone: Error getting settings - {e}")
         return {}
 
 async def get_start_text(client, user_mention):
@@ -76,11 +77,11 @@ async def check_force_sub(client, user_id):
     """Check if user is subscribed to force sub channels"""
     settings = await get_clone_settings(client)
     if not settings:
-        return True
+        return True, None
     
     fsub_channels = settings.get('force_sub_channels', [])
     if not fsub_channels:
-        return True
+        return True, None
     
     not_joined = []
     for channel in fsub_channels:
@@ -123,6 +124,7 @@ async def send_file_to_user(client, message, file_id):
         log_channel = LOG_CHANNEL
     
     if not log_channel:
+        await message.reply("<b>❌ Log channel not configured!</b>")
         return False
     
     try:
@@ -168,47 +170,105 @@ async def send_file_to_user(client, message, file_id):
         return False
 
 # ==================== START COMMAND ====================
-@Client.on_message(filters.command("start") & filters.private, group=1)
+@Client.on_message(filters.command("start") & filters.private)
 async def clone_start(client, message):
     """Clone bot start handler"""
+    print(f"Clone: Start command received from {message.from_user.id}")
     
-    # Check force subscribe
-    if DB_LOADED:
-        is_subscribed, channels = await check_force_sub(client, message.from_user.id)
-        if not is_subscribed and channels:
-            buttons = []
-            for channel in channels:
-                buttons.append([InlineKeyboardButton(f'📢 Join Channel', url=f'https://t.me/{channel.replace("@", "")}')])
-            buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
-            
-            return await message.reply(
-                "<b>⚠️ You must join our channels to use this bot!</b>\n\n"
-                "Click the buttons below to join, then click 'Try Again'.",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-    
-    # Handle file access parameter
-    if len(message.command) > 1:
-        parameter = message.command[1]
-        file_id = await decode_file_id(parameter)
+    try:
+        # Check force subscribe
+        if DB_LOADED:
+            is_subscribed, channels = await check_force_sub(client, message.from_user.id)
+            if not is_subscribed and channels:
+                buttons = []
+                for channel in channels:
+                    buttons.append([InlineKeyboardButton(f'📢 Join Channel', url=f'https://t.me/{channel.replace("@", "")}')])
+                buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
+                
+                return await message.reply(
+                    "<b>⚠️ You must join our channels to use this bot!</b>\n\n"
+                    "Click the buttons below to join, then click 'Try Again'.",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
         
-        if file_id:
-            print(f"Clone: Handling file access for ID {file_id}")
-            loading = await message.reply("<b>🔄 Fᴇᴛᴄʜɪɴɢ ғɪʟᴇ...</b>")
+        # Handle file access parameter
+        if len(message.command) > 1:
+            parameter = message.command[1]
+            file_id = await decode_file_id(parameter)
             
-            success = await send_file_to_user(client, message, file_id)
-            
-            try:
-                await loading.delete()
-            except:
-                pass
-            
-            if success:
-                return
-    
-    # Regular start message with custom text
-    start_text = await get_start_text(client, message.from_user.mention)
-    await message.reply(start_text, reply_markup=get_start_keyboard())
+            if file_id:
+                print(f"Clone: Handling file access for ID {file_id}")
+                loading = await message.reply("<b>🔄 Fᴇᴛᴄʜɪɴɢ ғɪʟᴇ...</b>")
+                
+                success = await send_file_to_user(client, message, file_id)
+                
+                try:
+                    await loading.delete()
+                except:
+                    pass
+                
+                if success:
+                    return
+        
+        # Regular start message with custom text
+        start_text = await get_start_text(client, message.from_user.mention)
+        await message.reply(start_text, reply_markup=get_start_keyboard())
+        print(f"Clone: Start message sent successfully to {message.from_user.id}")
+        
+    except Exception as e:
+        print(f"Clone: Error in start command - {e}")
+        import traceback
+        traceback.print_exc()
+        await message.reply("<b>❌ An error occurred. Please try again later.</b>")
+
+# ==================== CUSTOMIZATION CALLBACKS ====================
+@Client.on_callback_query(filters.regex("^set_start_"))
+async def set_start_message(client, query: CallbackQuery):
+    """Set custom start message"""
+    try:
+        bot_id = int(query.data.split("_")[2])
+        
+        await query.message.edit_text(
+            "<b>📝 Send your custom START message</b>\n\n"
+            "Use {mention} for user mention\n"
+            "Use /cancel to cancel",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
+            ]])
+        )
+        
+        user_states[query.from_user.id] = {
+            'action': 'awaiting_start_msg',
+            'bot_id': bot_id
+        }
+        await query.answer()
+    except Exception as e:
+        print(f"Clone: Error in set_start - {e}")
+        await query.answer("Error occurred!", show_alert=True)
+
+@Client.on_callback_query(filters.regex("^set_fsub_"))
+async def set_force_sub(client, query: CallbackQuery):
+    """Set force subscription channel"""
+    try:
+        bot_id = int(query.data.split("_")[2])
+        
+        await query.message.edit_text(
+            "<b>🔒 Send channel username or ID</b>\n\n"
+            "Example: @yourchannel or -100123456789\n"
+            "Use /cancel to cancel",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
+            ]])
+        )
+        
+        user_states[query.from_user.id] = {
+            'action': 'awaiting_fsub',
+            'bot_id': bot_id
+        }
+        await query.answer()
+    except Exception as e:
+        print(f"Clone: Error in set_fsub - {e}")
+        await query.answer("Error occurred!", show_alert=True)
 
 # ==================== CALLBACKS ====================
 @Client.on_callback_query(filters.regex("^clone_"))
@@ -216,84 +276,150 @@ async def clone_callbacks(client, query: CallbackQuery):
     """Handle clone bot callbacks"""
     data = query.data
     
-    # Check force sub on callback
-    if data == "clone_start" and DB_LOADED:
-        is_subscribed, channels = await check_force_sub(client, query.from_user.id)
-        if not is_subscribed and channels:
-            buttons = []
-            for channel in channels:
-                buttons.append([InlineKeyboardButton(f'📢 Join Channel', url=f'https://t.me/{channel.replace("@", "")}')])
-            buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
-            
-            return await query.message.edit_text(
-                "<b>⚠️ You must join our channels to use this bot!</b>",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-    
-    if data == "clone_help":
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
-        ]])
-        await query.message.edit_text(HELP_TEXT, reply_markup=keyboard)
-    
-    elif data == "clone_about":
-        keyboard = InlineKeyboardMarkup([[
-            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
-        ]])
-        await query.message.edit_text(ABOUT_TEXT, reply_markup=keyboard)
-    
-    elif data == "clone_start":
-        start_text = await get_start_text(client, query.from_user.mention)
-        await query.message.edit_text(start_text, reply_markup=get_start_keyboard())
-    
-    await query.answer()
+    try:
+        # Check force sub on callback
+        if data == "clone_start" and DB_LOADED:
+            is_subscribed, channels = await check_force_sub(client, query.from_user.id)
+            if not is_subscribed and channels:
+                buttons = []
+                for channel in channels:
+                    buttons.append([InlineKeyboardButton(f'📢 Join Channel', url=f'https://t.me/{channel.replace("@", "")}')])
+                buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
+                
+                return await query.message.edit_text(
+                    "<b>⚠️ You must join our channels to use this bot!</b>",
+                    reply_markup=InlineKeyboardMarkup(buttons)
+                )
+        
+        if data == "clone_help":
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+            ]])
+            await query.message.edit_text(HELP_TEXT, reply_markup=keyboard)
+        
+        elif data == "clone_about":
+            keyboard = InlineKeyboardMarkup([[
+                InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+            ]])
+            await query.message.edit_text(ABOUT_TEXT, reply_markup=keyboard)
+        
+        elif data == "clone_start":
+            start_text = await get_start_text(client, query.from_user.mention)
+            await query.message.edit_text(start_text, reply_markup=get_start_keyboard())
+        
+        await query.answer()
+    except Exception as e:
+        print(f"Clone: Error in callback - {e}")
+        await query.answer("Error occurred!", show_alert=True)
 
 # ==================== HELP/ABOUT COMMANDS ====================
 @Client.on_message(filters.command(["help", "about"]) & filters.private)
 async def clone_help_about(client, message):
     """Handle help and about commands"""
-    command = message.command[0].lower()
+    try:
+        command = message.command[0].lower()
+        
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+        ]])
+        
+        if command == "help":
+            await message.reply(HELP_TEXT, reply_markup=keyboard)
+        else:
+            await message.reply(ABOUT_TEXT, reply_markup=keyboard)
+    except Exception as e:
+        print(f"Clone: Error in help/about - {e}")
+
+# ==================== TEXT MESSAGE HANDLER ====================
+@Client.on_message(filters.text & filters.private & ~filters.command(["start", "help", "about"]))
+async def handle_clone_settings(client, message):
+    """Handle custom settings input"""
+    user_id = message.from_user.id
     
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
-    ]])
+    if user_id not in user_states:
+        return
     
-    if command == "help":
-        await message.reply(HELP_TEXT, reply_markup=keyboard)
-    else:
-        await message.reply(ABOUT_TEXT, reply_markup=keyboard)
+    try:
+        state = user_states[user_id]
+        
+        if message.text == "/cancel":
+            del user_states[user_id]
+            return await message.reply(
+                "❌ Cancelled!",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('🔙 Back', callback_data=f'customize_{state["bot_id"]}')
+                ]])
+            )
+        
+        if state['action'] == 'awaiting_start_msg':
+            bot_id = state['bot_id']
+            if DB_LOADED:
+                clone = await clone_db.get_clone(bot_id)
+                settings = clone.get('settings', {})
+                settings['start_message'] = message.text.html
+                await clone_db.update_clone(bot_id, {'settings': settings})
+            
+            del user_states[user_id]
+            await message.reply(
+                "✅ <b>Start message updated!</b>",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('🔙 Back to Settings', callback_data=f'customize_{bot_id}')
+                ]])
+            )
+        
+        elif state['action'] == 'awaiting_fsub':
+            bot_id = state['bot_id']
+            channel = message.text.strip()
+            
+            if DB_LOADED:
+                clone = await clone_db.get_clone(bot_id)
+                settings = clone.get('settings', {})
+                if 'force_sub_channels' not in settings:
+                    settings['force_sub_channels'] = []
+                settings['force_sub_channels'].append(channel)
+                await clone_db.update_clone(bot_id, {'settings': settings})
+            
+            del user_states[user_id]
+            await message.reply(
+                f"✅ <b>Force sub channel added:</b> {channel}",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('🔙 Back to Settings', callback_data=f'customize_{bot_id}')
+                ]])
+            )
+    except Exception as e:
+        print(f"Clone: Error handling settings - {e}")
 
 # ==================== FILE UPLOAD ====================
-@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private, group=1)
+@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private)
 async def clone_file_upload(client, message):
     """Handle file uploads in clone bot"""
     
-    settings = await get_clone_settings(client)
-    
-    # Check if public use is enabled
-    if settings and not settings.get('public_use', True):
-        bot_info = await client.get_me()
-        clone = await clone_db.get_clone(bot_info.id)
-        
-        # Check if user is owner or admin
-        admins = settings.get('admins', [])
-        if message.from_user.id != clone['user_id'] and message.from_user.id not in admins:
-            return await message.reply(
-                "<b>⚠️ This bot is in private mode!</b>\n\n"
-                "Only the owner and admins can upload files."
-            )
-    
-    # Get log channel
-    log_channel = settings.get('log_channel') if settings else None
-    if not log_channel:
-        log_channel = LOG_CHANNEL
-    
-    if not log_channel:
-        return await message.reply(
-            "<b>❌ Fɪʟᴇ sᴛᴏʀᴀɢᴇ ɴᴏᴛ ᴄᴏɴғɪɢᴜʀᴇᴅ!</b>"
-        )
-    
     try:
+        settings = await get_clone_settings(client)
+        
+        # Check if public use is enabled
+        if settings and not settings.get('public_use', True):
+            bot_info = await client.get_me()
+            clone = await clone_db.get_clone(bot_info.id)
+            
+            # Check if user is owner or admin
+            admins = settings.get('admins', [])
+            if message.from_user.id != clone['user_id'] and message.from_user.id not in admins:
+                return await message.reply(
+                    "<b>⚠️ This bot is in private mode!</b>\n\n"
+                    "Only the owner and admins can upload files."
+                )
+        
+        # Get log channel
+        log_channel = settings.get('log_channel') if settings else None
+        if not log_channel:
+            log_channel = LOG_CHANNEL
+        
+        if not log_channel:
+            return await message.reply(
+                "<b>❌ Fɪʟᴇ sᴛᴏʀᴀɢᴇ ɴᴏᴛ ᴄᴏɴғɪɢᴜʀᴇᴅ!</b>"
+            )
+        
         post = await message.copy(log_channel)
         file_id = str(post.id)
         
@@ -309,6 +435,8 @@ async def clone_file_upload(client, message):
         
     except Exception as e:
         print(f"Clone: Upload error - {e}")
+        import traceback
+        traceback.print_exc()
         await message.reply("<b>❌ Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ʟɪɴᴋ!</b>")
 
 print("✅ Enhanced clone commands loaded with customization features!")
