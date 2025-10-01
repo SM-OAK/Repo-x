@@ -201,3 +201,118 @@ async def toggle_public(client, query: CallbackQuery):
     await customize_clone(client, query)
 
 logger.info("✅ Clone customization module loaded with full features")
+
+# -----------------------------
+# MONGODB SETTINGS
+# -----------------------------
+@Client.on_callback_query(filters.regex("^set_mongo_"))
+async def set_mongo_db(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current_mongo = clone.get('settings', {}).get('mongo_db')
+    
+    buttons = []
+    if current_mongo:
+        buttons.append([InlineKeyboardButton('🗑️ REMOVE (Use Default)', callback_data=f'remove_mongo_{bot_id}')])
+        status_text = f"<b>✅ Custom MongoDB Connected</b>\n<code>{current_mongo[:50]}...</code>"
+    else:
+        status_text = "<b>📊 Using Default MongoDB</b>\n<i>Clone uses parent bot database.</i>"
+    
+    buttons.append([InlineKeyboardButton('➕ SET CUSTOM MONGODB', callback_data=f'add_mongo_{bot_id}')])
+    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
+    
+    text = f"<b>🗄️ MONGODB SETTINGS</b>\n\n{status_text}\n<i>Custom MongoDB allows clone to use separate DB.</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^add_mongo_"))
+async def add_mongo_db(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'add_mongo', 'bot_id': bot_id}
+    await query.message.edit_text(
+        "<b>🗄️ SET CUSTOM MONGODB</b>\nSend your MongoDB URI.\nExample:\n<code>mongodb+srv://username:password@cluster.mongodb.net</code>\nSend /cancel to cancel.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('❌ CANCEL', callback_data=f'set_mongo_{bot_id}')]])
+    )
+    await query.answer()
+
+@Client.on_callback_query(filters.regex("^remove_mongo_"))
+async def remove_mongo_db(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'mongo_db', None)
+    await query.answer("✅ Switched to default MongoDB!", show_alert=True)
+    await set_mongo_db(client, query)
+
+# -----------------------------
+# LOG CHANNEL SETTINGS
+# -----------------------------
+@Client.on_callback_query(filters.regex("^set_log_"))
+async def set_log_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    log_channel = clone.get('settings', {}).get('log_channel')
+    
+    buttons = []
+    if log_channel:
+        buttons.append([InlineKeyboardButton(f'📢 {log_channel}', callback_data='log_info'),
+                        InlineKeyboardButton('❌ REMOVE', callback_data=f'remove_log_{bot_id}')])
+    else:
+        buttons.append([InlineKeyboardButton('No log channel set', callback_data='none')])
+    
+    buttons.append([InlineKeyboardButton('➕ SET LOG CHANNEL', callback_data=f'add_log_{bot_id}')])
+    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
+    
+    await query.message.edit_text("<b>📝 LOG CHANNEL</b>\n<i>All bot activities will be logged here.</i>", reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^add_log_"))
+async def add_log_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'add_log', 'bot_id': bot_id}
+    await query.message.edit_text(
+        "<b>📝 SET LOG CHANNEL</b>\nSend channel username or ID.\nExample: @log_channel or -1001234567890\nSend /cancel to cancel.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('❌ CANCEL', callback_data=f'set_log_{bot_id}')]])
+    )
+    await query.answer()
+
+@Client.on_callback_query(filters.regex("^remove_log_"))
+async def remove_log_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'log_channel', None)
+    await query.answer("✅ Log channel removed!", show_alert=True)
+    await set_log_channel(client, query)
+
+# -----------------------------
+# DATABASE CHANNEL SETTINGS
+# -----------------------------
+@Client.on_callback_query(filters.regex("^set_db_channel_"))
+async def set_database_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    clone = await clone_db.get_clone(bot_id)
+    db_channel = clone.get('settings', {}).get('db_channel')
+    
+    buttons = []
+    if db_channel:
+        buttons.append([InlineKeyboardButton(f'📢 {db_channel}', callback_data='db_info'),
+                        InlineKeyboardButton('❌ REMOVE', callback_data=f'remove_db_ch_{bot_id}')])
+    else:
+        buttons.append([InlineKeyboardButton('No database channel set', callback_data='none')])
+    
+    buttons.append([InlineKeyboardButton('➕ SET DATABASE CHANNEL', callback_data=f'add_db_ch_{bot_id}')])
+    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
+    
+    await query.message.edit_text("<b>🗄️ DATABASE CHANNEL</b>\n<i>Files will be stored in this channel.</i>", reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^add_db_ch_"))
+async def add_database_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    user_states[query.from_user.id] = {'action': 'add_db_channel', 'bot_id': bot_id}
+    await query.message.edit_text(
+        "<b>🗄️ SET DATABASE CHANNEL</b>\nSend channel username or ID.\nSend /cancel to cancel.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('❌ CANCEL', callback_data=f'set_db_channel_{bot_id}')]])
+    )
+    await query.answer()
+
+@Client.on_callback_query(filters.regex("^remove_db_ch_"))
+async def remove_database_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    await clone_db.update_clone_setting(bot_id, 'db_channel', None)
+    await query.answer("✅ Database channel removed!", show_alert=True)
+    await set_database_channel(client, query)
