@@ -241,7 +241,22 @@ async def clone_file_upload(client, message):
 
 @Client.on_message(filters.command("batch") & filters.private, group=1)
 async def batch_handler(client, message):
+    """Handle batch file uploads"""
     bot_info = await client.get_me()
     bot_id = bot_info.id
     settings = await get_clone_settings(bot_id)
-    moderators = settings.get('
+    moderators = settings.get('moderators', []) if settings else []
+
+    # Check moderator/owner access
+    if DB_LOADED:
+        clone = await clone_db.get_clone(bot_id)
+        owner_id = clone.get('user_id') if clone else None
+        if message.from_user.id not in moderators and message.from_user.id != owner_id:
+            return await message.reply("<b>⚠️ Only moderators/owner can use this command!</b>")
+
+    # Start batch upload mode
+    await message.reply(
+        "<b>📦 Bᴀᴛᴄʜ Uᴘʟᴏᴀᴅ Mᴏᴅᴇ</b>\n\n"
+        "Forward multiple files from a channel or chat.\n"
+        "Send /done when finished."
+    )
