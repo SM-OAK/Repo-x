@@ -1,209 +1,234 @@
-import re
-import os
-import logging
+import base64
+import asyncio
 from pyrogram import Client, filters
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from config import CLONE_MODE, API_ID, API_HASH, ADMINS
-from database.clone_db import clone_db
-from Script import script
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Try to import from config - fallback gracefully
+try:
+    from config import LOG_CHANNEL, ADMINS, AUTO_DELETE_MODE, AUTO_DELETE_TIME
+    CONFIG_LOADED = True
+except:
+    LOG_CHANNEL = None
+    ADMINS = []
+    AUTO_DELETE_MODE = False
+    AUTO_DELETE_TIME = 1800
+    CONFIG_LOADED = False
 
-# Active clone clients {bot_id: Client}
-active_clones = {}
+# Try to import database - fallback gracefully
+try:
+    from database.clone_db import clone_db
+    DB_LOADED = True
+except:
+    DB_LOADED = False
 
-# -----------------------------
-# Main Clone Menu (callback: "clone")
-# -----------------------------
-@Client.on_callback_query(filters.regex("^clone$"))
-async def clone_management_menu(client, query: CallbackQuery):
-    if not CLONE_MODE:
-        return await query.answer("Clone feature is disabled!", show_alert=True)
+START_TEXT = """<b>Hᴇʟʟᴏ {} ✨
 
-    user_id = query.from_user.id
-    buttons = []
+I ᴀᴍ ᴀ ᴘᴇʀᴍᴀɴᴇɴᴛ ғɪʟᴇ sᴛᴏʀᴇ ʙᴏᴛ ᴀɴᴅ ᴜsᴇʀs ᴄᴀɴ ᴀᴄᴄᴇss sᴛᴏʀᴇᴅ ᴍᴇssᴀɢᴇs ʙʏ ᴜsɪɴɢ ᴀ sʜᴀʀᴇᴀʙʟᴇ ʟɪɴᴋ ɢɪᴠᴇɴ ʙʏ ᴍᴇ.
+
+Tᴏ ᴋɴᴏᴡ ᴍᴏʀᴇ ᴄʟɪᴄᴋ ʜᴇʟᴘ ʙᴜᴛᴛᴏɴ.</b>"""
+
+HELP_TEXT = """<b>📚 Hᴇʟᴘ Mᴇɴᴜ
+
+🔹 Sᴇɴᴅ ᴍᴇ ᴀɴʏ ғɪʟᴇ/ᴠɪᴅᴇᴏ
+🔹 I ᴡɪʟʟ ɢɪᴠᴇ ʏᴏᴜ ᴀ sʜᴀʀᴇᴀʙʟᴇ ʟɪɴᴋ
+🔹 Usᴇʀs ᴄᴀɴ ᴀᴄᴄᴇss ғɪʟᴇs ғʀᴏᴍ ᴛʜᴇ ʟɪɴᴋ
+
+💡 Jᴜsᴛ sᴇɴᴅ ᴍᴇ ᴀɴʏ ғɪʟᴇ!</b>"""
+
+ABOUT_TEXT = """<b>━━━━━━━━━━━━━━━━━━━
+◈ Mʏ Nᴀᴍᴇ: Fɪʟᴇ Sᴛᴏʀᴇ Cʟᴏɴᴇ
+◈ Cʀᴇᴀᴛᴏʀ: @VJ_Botz
+◈ Lɪʙʀᴀʀʏ: Pʏʀᴏɢʀᴀᴍ
+◈ Lᴀɴɢᴜᴀɢᴇ: Pʏᴛʜᴏɴ 3
+━━━━━━━━━━━━━━━━━━━</b>"""
+
+def get_start_keyboard():
+    """Get keyboard for start message"""
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton('💁‍♀️ ʜᴇʟᴘ', callback_data='clone_help'),
+            InlineKeyboardButton('😊 ᴀʙᴏᴜᴛ', callback_data='clone_about')
+        ]
+    ])
+
+async def decode_file_id(data):
+    """Decode file ID from various formats"""
+    try:
+        # Format 1: file_123
+        if data.startswith("file_"):
+            return int(data[5:])
+        
+        # Format 2: Base64 encoded
+        decoded = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4)).decode("ascii")
+        
+        # Format 2a: file_123 encoded
+        if decoded.startswith("file_"):
+            return int(decoded[5:])
+        
+        # Format 2b: prefix_123
+        if "_" in decoded:
+            _, file_id = decoded.split("_", 1)
+            return int(file_id)
+        
+        # Format 3: Direct number
+        return int(decoded)
+    
+    except Exception as e:
+        print(f"Clone: Decode error - {e}")
+        return None
+
+async def send_file_to_user(client, message, file_id):
+    """Retrieve and send file to user"""
+    if not LOG_CHANNEL:
+        return False
     
     try:
-        # Check if clone_db is initialized
-        if clone_db is None:
-            logger.error("clone_db is None!")
-            return await query.answer("Database not initialized! Contact owner.", show_alert=True)
+        # Get file from log channel
+        file_msg = await client.get_messages(LOG_CHANNEL, file_id)
         
-        # Get clones from DB
-        clones = []
-        if user_id in ADMINS:
-            clones = await clone_db.get_all_clones()
-        else:
-            clones = await clone_db.get_user_clones(user_id)
-
-        logger.info(f"Loaded {len(clones) if clones else 0} clones for user {user_id}")
-
-        if not clones or len(clones) == 0:
-            reply_text = "✨ **No Clones Found**\n\nYou haven't created any clone bots yet. Use the button below to get started."
-        else:
-            reply_text = "✨ **Manage Clone's**\n\nYou can now manage and create your very own identical clone bot, mirroring all my awesome features, using the given buttons."
-            # Create a button for each clone
-            for clone in clones:
-                status = "🟢" if clone.get('is_active', True) else "🔴"
-                clone_name = clone.get('name', 'Unknown')
-                clone_id = clone.get('bot_id', 0)
-                buttons.append(
-                    [InlineKeyboardButton(
-                        f"{status} {clone_name}", 
-                        callback_data=f"customize_{clone_id}"
-                    )]
-                )
-
-        # Add 'Add Clone' and 'Back' buttons
-        buttons.append([InlineKeyboardButton('➕ Add Clone', callback_data='add_clone')])
-        buttons.append([InlineKeyboardButton('🔙 Back', callback_data='start')])
-
-        await query.message.edit_text(
-            reply_text,
-            reply_markup=InlineKeyboardMarkup(buttons)
+        if not file_msg or not file_msg.media:
+            await message.reply("<b>❌ Fɪʟᴇ ɴᴏᴛ ғᴏᴜɴᴅ!</b>")
+            return False
+        
+        # Send file to user
+        sent_msg = await file_msg.copy(
+            chat_id=message.from_user.id,
+            caption=file_msg.caption
         )
         
-    except AttributeError as e:
-        logger.error(f"AttributeError in clone menu: {e}")
-        await query.answer("Database error! Make sure clone_db is initialized.", show_alert=True)
-    except Exception as e:
-        logger.error(f"Error in clone menu: {e}", exc_info=True)
-        await query.answer(f"Error: {str(e)}", show_alert=True)
-
-# -----------------------------
-# Add Clone Instructions
-# -----------------------------
-@Client.on_callback_query(filters.regex("^add_clone$"))
-async def add_clone_callback(client, query: CallbackQuery):
-    await query.message.edit_text(
-        "<b>📝 To create a new clone, please use the /clone command.</b>\n\n"
-        "After typing the command, forward the message you receive from @BotFather.",
-        reply_markup=InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🔙 Back", callback_data="clone")]]
-        )
-    )
-
-# -----------------------------
-# Clone Creation Command
-# -----------------------------
-@Client.on_message(filters.command("clone") & filters.private)
-async def clone_command(client, message):
-    if not CLONE_MODE:
-        return await message.reply("Clone feature is disabled!")
-
-    try:
-        os.makedirs("clone_sessions", exist_ok=True)
-
-        token_msg = await client.ask(
-            message.chat.id,
-            "<b>Please forward the message from @BotFather that contains your bot token.</b>\n\nUse /cancel to stop this process.",
-            timeout=300
-        )
-
-        if token_msg.text and token_msg.text == '/cancel':
-            return await message.reply("Process canceled!")
-
-        if not (token_msg.forward_from and token_msg.forward_from.id == 93372553):
-            return await message.reply("❌ **Error:** This message was not forwarded from @BotFather. Please try again.")
-
-        try:
-            bot_token = re.findall(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', token_msg.text)[0]
-        except:
-            return await message.reply("❌ **Invalid Token:** The token format is incorrect.")
-
-        # Check if clone already exists
-        try:
-            existing_clone = await clone_db.get_clone_by_token(bot_token)
-            if existing_clone:
-                return await message.reply("⚠️ **Already Cloned:** This bot has already been cloned.")
-        except Exception as e:
-            logger.error(f"Error checking existing clone: {e}")
-
-        msg = await message.reply_text("⏳ Please wait, creating your clone bot...")
-
-        try:
-            session_name = f"clone_sessions/clone_{message.from_user.id}_{bot_token[:8]}"
-            clone_bot = Client(
-                session_name, 
-                API_ID, 
-                API_HASH, 
-                bot_token=bot_token, 
-                plugins={"root": "clone_plugins"}
+        # Auto-delete if enabled
+        if AUTO_DELETE_MODE:
+            warning = await message.reply(
+                f"<b>⚠️ IMPORTANT</b>\n\n"
+                f"This file will be deleted in <b>{AUTO_DELETE_TIME // 60} minutes</b>.\n"
+                f"Please forward to Saved Messages!"
             )
-            await clone_bot.start()
-            bot_info = await clone_bot.get_me()
-
-            # Add to database
-            await clone_db.add_clone(
-                user_id=message.from_user.id,
-                bot_id=bot_info.id,
-                bot_token=bot_token,
-                name=bot_info.first_name,
-                username=bot_info.username or "unknown"
-            )
-
-            active_clones[bot_info.id] = clone_bot
-
-            buttons = [
-                [InlineKeyboardButton('🛠️ Customize Your Clone', callback_data=f'customize_{bot_info.id}')],
-                [InlineKeyboardButton('🔙 Back to Clones', callback_data='clone')]
-            ]
-            await msg.edit_text(
-                f"<b>✅ Clone Created Successfully!</b>\n\n"
-                f"<b>🤖 Bot:</b> @{bot_info.username}\n"
-                f"<b>📝 Name:</b> {bot_info.first_name}\n"
-                f"<b>🆔 Bot ID:</b> <code>{bot_info.id}</code>",
-                reply_markup=InlineKeyboardMarkup(buttons)
-            )
-
-        except Exception as e:
-            logger.error(f"Clone creation error: {e}", exc_info=True)
-            await msg.edit_text(f"⚠️ **An error occurred:**\n\n<code>{str(e)}</code>")
-
-    except Exception as e:
-        logger.error(f"Clone process error: {e}", exc_info=True)
-        await message.reply(f"❌ Error: {str(e)}")
-
-# -----------------------------
-# Restart all clones on startup
-# -----------------------------
-async def restart_bots():
-    if not CLONE_MODE:
-        logger.info("Clone mode disabled")
-        return
-
-    os.makedirs("clone_sessions", exist_ok=True)
-    
-    try:
-        clones = await clone_db.get_all_clones()
-        logger.info(f"🔄 Found {len(clones)} clones in DB")
-
-        for clone in clones:
-            if not clone.get('is_active', True):
-                logger.info(f"⏭️ Skipping inactive clone: @{clone.get('username', 'unknown')}")
-                continue
-                
-            bot_id = clone['bot_id']
-            bot_token = clone['bot_token']
+            
+            await asyncio.sleep(AUTO_DELETE_TIME)
             
             try:
-                session_name = f"clone_sessions/clone_{bot_id}"
-                client = Client(
-                    session_name, 
-                    API_ID, 
-                    API_HASH, 
-                    bot_token=bot_token, 
-                    plugins={"root": "clone_plugins"}
-                )
-                await client.start()
-                active_clones[bot_id] = client
-                logger.info(f"✅ Restarted: @{clone.get('username', 'unknown')}")
-            except Exception as e:
-                logger.error(f"Failed to restart @{clone.get('username', 'unknown')}: {e}")
-
-        logger.info(f"✅ Successfully restarted {len(active_clones)} clones")
+                await sent_msg.delete()
+                await warning.edit_text("✅ File deleted!")
+            except:
+                pass
+        
+        return True
+        
     except Exception as e:
-        logger.error(f"Error in restart_bots: {e}")
+        print(f"Clone: Error sending file - {e}")
+        await message.reply(f"<b>❌ Eʀʀᴏʀ: {str(e)}</b>")
+        return False
 
-logger.info("✅ Clone manager module loaded")
+# PRIORITY: Clone bot only handles if main bot doesn't
+@Client.on_message(filters.command("start") & filters.private, group=1)
+async def clone_start(client, message):
+    """Clone bot start handler - runs with lower priority"""
+    
+    # Check if there's a parameter
+    if len(message.command) > 1:
+        parameter = message.command[1]
+        
+        # Try to decode as file access
+        file_id = await decode_file_id(parameter)
+        
+        if file_id:
+            print(f"Clone: Handling file access for ID {file_id}")
+            
+            # Show loading
+            loading = await message.reply("<b>🔄 Fᴇᴛᴄʜɪɴɢ ғɪʟᴇ...</b>")
+            
+            # Send file
+            success = await send_file_to_user(client, message, file_id)
+            
+            # Delete loading message
+            try:
+                await loading.delete()
+            except:
+                pass
+            
+            if success:
+                return  # Successfully handled
+            else:
+                # Fall through to show start message
+                pass
+        else:
+            # Invalid parameter - show start message
+            print(f"Clone: Invalid parameter - {parameter}")
+    
+    # Regular start message
+    await message.reply(
+        START_TEXT.format(message.from_user.mention),
+        reply_markup=get_start_keyboard()
+    )
+
+@Client.on_callback_query(filters.regex("^clone_"))
+async def clone_callbacks(client, query: CallbackQuery):
+    """Handle clone bot callbacks"""
+    data = query.data
+    
+    if data == "clone_help":
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+        ]])
+        await query.message.edit_text(HELP_TEXT, reply_markup=keyboard)
+    
+    elif data == "clone_about":
+        keyboard = InlineKeyboardMarkup([[
+            InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+        ]])
+        await query.message.edit_text(ABOUT_TEXT, reply_markup=keyboard)
+    
+    elif data == "clone_start":
+        await query.message.edit_text(
+            START_TEXT.format(query.from_user.mention),
+            reply_markup=get_start_keyboard()
+        )
+    
+    await query.answer()
+
+@Client.on_message(filters.command(["help", "about"]) & filters.private)
+async def clone_help_about(client, message):
+    """Handle help and about commands"""
+    command = message.command[0].lower()
+    
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton('🏠 ʜᴏᴍᴇ', callback_data='clone_start')
+    ]])
+    
+    if command == "help":
+        await message.reply(HELP_TEXT, reply_markup=keyboard)
+    else:
+        await message.reply(ABOUT_TEXT, reply_markup=keyboard)
+
+# File upload handler for clone bots
+@Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private, group=1)
+async def clone_file_upload(client, message):
+    """Handle file uploads in clone bot"""
+    
+    if not LOG_CHANNEL:
+        return await message.reply(
+            "<b>❌ Fɪʟᴇ sᴛᴏʀᴀɢᴇ ɴᴏᴛ ᴄᴏɴғɪɢᴜʀᴇᴅ!</b>"
+        )
+    
+    try:
+        # Copy to log channel
+        post = await message.copy(LOG_CHANNEL)
+        file_id = str(post.id)
+        
+        # Generate link
+        bot_username = (await client.get_me()).username
+        string = f'file_{file_id}'
+        encoded = base64.urlsafe_b64encode(string.encode("ascii")).decode().strip("=")
+        share_link = f"https://t.me/{bot_username}?start={encoded}"
+        
+        # Send link
+        await message.reply(
+            f"<b>⭕ Hᴇʀᴇ ɪs ʏᴏᴜʀ ʟɪɴᴋ:\n\n"
+            f"🔗 Lɪɴᴋ: {share_link}</b>"
+        )
+        
+    except Exception as e:
+        print(f"Clone: Upload error - {e}")
+        await message.reply("<b>❌ Fᴀɪʟᴇᴅ ᴛᴏ ɢᴇɴᴇʀᴀᴛᴇ ʟɪɴᴋ!</b>")
+
+print("✅ Clone commands loaded - non-conflicting mode with group=1 priority!")
