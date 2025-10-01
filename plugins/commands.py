@@ -1,4 +1,3 @@
-# plugins/commands.py
 import random
 import asyncio
 import base64
@@ -13,6 +12,9 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# -----------------------------
+# Start command
+# -----------------------------
 @Client.on_message(filters.command("start") & filters.private)
 async def start(client, message):
     try:
@@ -86,4 +88,61 @@ async def start(client, message):
 
     except Exception as e:
         logger.error(f"Start command error: {e}")
-        await message.reply("❌ Something went wrong while processing your request.")    
+        await message.reply("❌ Something went wrong while processing your request.")
+
+# -----------------------------
+# Start / Help / About Callbacks
+# -----------------------------
+@Client.on_callback_query(filters.regex("^(start|help|about|clone)$"))
+async def start_callbacks(client, query):
+    try:
+        user_id = query.from_user.id
+        data = query.data
+
+        # Admin panel
+        if user_id in ADMINS and data == "start":
+            buttons = [
+                [
+                    InlineKeyboardButton('👤 Users', callback_data='stats'),
+                    InlineKeyboardButton('📢 Broadcast', callback_data='broadcast')
+                ],
+                [InlineKeyboardButton('🤖 Manage Clones', callback_data='clone')],
+                [InlineKeyboardButton('⚙️ Settings', callback_data='settings')]
+            ]
+            await query.message.edit_text(
+                script.ADMIN_START.format(query.from_user.mention),
+                reply_markup=InlineKeyboardMarkup(buttons)
+            )
+
+        # Help
+        elif data == "help":
+            buttons = [[InlineKeyboardButton('🏠 Home', callback_data='start')]]
+            await query.message.edit_text(script.HELP_TXT, reply_markup=InlineKeyboardMarkup(buttons))
+
+        # About
+        elif data == "about":
+            buttons = [[InlineKeyboardButton('🏠 Home', callback_data='start')]]
+            await query.message.edit_text(script.ABOUT_TXT, reply_markup=InlineKeyboardMarkup(buttons))
+
+        # Clone / Manage clones
+        elif data == "clone":
+            from plugins.clone_manager import clone_management_menu
+            await clone_management_menu(client, query)
+
+        await query.answer()
+
+    except Exception as e:
+        logger.error(f"Error in start callback: {e}")
+        await query.answer("An error occurred!", show_alert=True)
+
+# -----------------------------
+# Close button callback
+# -----------------------------
+@Client.on_callback_query(filters.regex("^close$"))
+async def close_callback(client, query):
+    try:
+        await query.message.delete()
+        await query.answer()
+    except Exception as e:
+        logger.error(f"Error in close callback: {e}")
+        await query.answer()
