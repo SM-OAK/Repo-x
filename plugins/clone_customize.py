@@ -2,15 +2,12 @@
 from pyrogram import Client, filters
 from pyrogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from database.clone_db import clone_db
-from Script import script
 import logging
 
 logger = logging.getLogger(__name__)
-
-# Store user states for multi-step processes
 user_states = {}
 
-# Main customize clone menu
+# ==================== MAIN CUSTOMIZE MENU ====================
 @Client.on_callback_query(filters.regex("^customize_"))
 async def customize_clone(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[1])
@@ -20,600 +17,897 @@ async def customize_clone(client, query: CallbackQuery):
         return await query.answer("Clone not found!", show_alert=True)
     
     if clone['user_id'] != query.from_user.id:
-        return await query.answer("This is not your clone!", show_alert=True)
+        return await query.answer("Not your clone!", show_alert=True)
     
     settings = clone.get('settings', {})
+    status = "🟢" if clone.get('is_active', True) else "🔴"
+    mode = "🔓" if settings.get('public_use', True) else "🔒"
     
     buttons = [
         [
-            InlineKeyboardButton('START TEXT', callback_data=f'set_start_text_{bot_id}'),
-            InlineKeyboardButton('START PICTURE', callback_data=f'set_start_pic_{bot_id}')
+            InlineKeyboardButton('🎨 Appearance', callback_data=f'appearance_{bot_id}'),
+            InlineKeyboardButton('🔒 Security', callback_data=f'security_{bot_id}')
         ],
         [
-            InlineKeyboardButton('START BUTTON', callback_data=f'set_start_btn_{bot_id}'),
-            InlineKeyboardButton('FORCE SUBSCRIBE', callback_data=f'set_fsub_{bot_id}')
+            InlineKeyboardButton('📁 Files', callback_data=f'files_{bot_id}'),
+            InlineKeyboardButton('📊 Database', callback_data=f'database_{bot_id}')
         ],
         [
-            InlineKeyboardButton('MONGO DB', callback_data=f'set_mongo_{bot_id}'),
-            InlineKeyboardButton('LOG CHANNEL', callback_data=f'set_log_{bot_id}')
+            InlineKeyboardButton('👥 Admins', callback_data=f'admins_{bot_id}'),
+            InlineKeyboardButton('📢 Channels', callback_data=f'channels_{bot_id}')
         ],
         [
-            InlineKeyboardButton('ADMINS', callback_data=f'set_admins_{bot_id}'),
-            InlineKeyboardButton('BOT STATUS', callback_data=f'bot_status_{bot_id}')
+            InlineKeyboardButton('📈 Statistics', callback_data=f'stats_{bot_id}'),
+            InlineKeyboardButton('⚙️ Settings', callback_data=f'bot_settings_{bot_id}')
         ],
         [
-            InlineKeyboardButton('DATABASE CHANNEL', callback_data=f'set_db_channel_{bot_id}'),
-            InlineKeyboardButton('RESTART BOT', callback_data=f'restart_{bot_id}')
+            InlineKeyboardButton(f'{mode} Toggle Mode', callback_data=f'toggle_public_{bot_id}'),
+            InlineKeyboardButton('🔄 Restart', callback_data=f'restart_{bot_id}')
         ],
         [
-            InlineKeyboardButton(f"🔒 PUBLIC USE - {'✅' if settings.get('public_use', True) else '❌'}", 
-                               callback_data=f'toggle_public_{bot_id}')
+            InlineKeyboardButton('⚠️ Deactivate', callback_data=f'deactivate_{bot_id}'),
+            InlineKeyboardButton('🗑️ Delete', callback_data=f'delete_{bot_id}')
         ],
-        [
-            InlineKeyboardButton('AUTO DELETE', callback_data=f'auto_delete_menu_{bot_id}')
-        ],
-        [
-            InlineKeyboardButton('DEACTIVATE BOT', callback_data=f'deactivate_{bot_id}'),
-            InlineKeyboardButton('DELETE BOT', callback_data=f'delete_{bot_id}')
-        ],
-        [InlineKeyboardButton('⬅️ BACK', callback_data='clone')]
+        [InlineKeyboardButton('« Back', callback_data='clone')]
     ]
     
-    settings_text = (
-        f"<b>🤖 YOUR CLONE BOT - @{clone['username']}</b>\n\n"
-        f"📝 <b>IF YOU WANT TO MODIFY YOUR CLONE BOT THEN DO IT FROM HERE.</b>\n\n"
-        f"⚠️ <b>NOTE - IF CLONE BOT NOT USING ALONG ONE WEEK THEN AUTOMATICALLY CLONE BOT DEACTIVATE.</b>\n\n"
-        f"⏰ <b>LAST USED -</b> {clone.get('last_used', 'Never')}\n"
-    )
-    
-    await query.message.edit_text(settings_text, reply_markup=InlineKeyboardMarkup(buttons))
-
-# Auto Delete Menu
-@Client.on_callback_query(filters.regex("^auto_delete_menu_"))
-async def auto_delete_menu(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[3])
-    clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    
-    auto_del_enabled = settings.get('auto_delete', False)
-    auto_del_time = settings.get('auto_delete_time', 300)
-    
-    minutes = auto_del_time // 60
-    seconds = auto_del_time % 60
-    time_display = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
-    
-    buttons = [
-        [
-            InlineKeyboardButton(
-                f"{'✅ ENABLE' if not auto_del_enabled else '❌ DISABLE'}", 
-                callback_data=f'toggle_autodel_{bot_id}'
-            )
-        ],
-        [
-            InlineKeyboardButton('CUSTOM TIME', callback_data=f'custom_del_time_{bot_id}')
-        ],
-        [InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')]
-    ]
-    
-    status = "ENABLED ✅" if auto_del_enabled else "DISABLED ❌"
-    
-    text = (
-        f"<b>🗑️ AUTO DELETE SETTINGS</b>\n\n"
-        f"<b>Status:</b> {status}\n"
-        f"<b>Delete Time:</b> {time_display} ({auto_del_time}s)\n\n"
-        f"<i>When enabled, files will be automatically deleted after the specified time.</i>"
-    )
-    
+    text = f"<b>{status} @{clone['username']}</b>\n<i>Select category:</i>"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# Toggle Auto Delete
-@Client.on_callback_query(filters.regex("^toggle_autodel_"))
-async def toggle_auto_delete(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    current = clone.get('settings', {}).get('auto_delete', False)
-    
-    new_status = not current
-    await clone_db.update_clone_setting(bot_id, 'auto_delete', new_status)
-    
-    await query.answer(f"Auto Delete: {'✅ Enabled' if new_status else '❌ Disabled'}", show_alert=True)
-    await auto_delete_menu(client, query)
-
-# Custom Delete Time
-@Client.on_callback_query(filters.regex("^custom_del_time_"))
-async def custom_delete_time(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[3])
-    user_states[query.from_user.id] = {'action': 'custom_del_time', 'bot_id': bot_id}
-    
-    await query.message.edit_text(
-        "<b>⏰ ENTER CUSTOM DELETE TIME</b>\n\n"
-        "Send time in seconds (minimum 20 seconds)\n"
-        "Examples:\n"
-        "• <code>60</code> - 1 minute\n"
-        "• <code>300</code> - 5 minutes\n"
-        "• <code>600</code> - 10 minutes\n\n"
-        "Send /cancel to cancel this operation.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'auto_delete_menu_{bot_id}')
-        ]])
-    )
-    await query.answer()
-
-# Force Subscribe Menu
-@Client.on_callback_query(filters.regex("^set_fsub_"))
-async def force_sub_menu(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
+# ==================== APPEARANCE ====================
+@Client.on_callback_query(filters.regex("^appearance_"))
+async def appearance_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
     clone = await clone_db.get_clone(bot_id)
     settings = clone.get('settings', {})
-    fsub_channels = settings.get('force_sub_channels', [])
+    
+    has_text = "✅" if settings.get('start_message') else "➕"
+    has_pic = "✅" if settings.get('start_photo') else "➕"
+    has_btn = "✅" if settings.get('start_button') else "➕"
+    has_caption = "✅" if settings.get('file_caption') else "➕"
+    
+    buttons = [
+        [InlineKeyboardButton(f'{has_text} Start Message', callback_data=f'start_text_{bot_id}')],
+        [InlineKeyboardButton(f'{has_pic} Start Photo', callback_data=f'start_photo_{bot_id}')],
+        [InlineKeyboardButton(f'{has_btn} Start Button', callback_data=f'start_button_{bot_id}')],
+        [InlineKeyboardButton(f'{has_caption} File Caption', callback_data=f'file_caption_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]
+    ]
+    
+    text = "<b>🎨 Appearance Settings</b>\n<i>Customize bot interface</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# Start Message
+@Client.on_callback_query(filters.regex("^start_text_"))
+async def start_text_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('start_message')
     
     buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton('👁️ Preview', callback_data=f'preview_start_{bot_id}')])
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_start_text_{bot_id}')])
     
-    # Display current channels with remove buttons
-    if fsub_channels:
-        for idx, channel in enumerate(fsub_channels[:6], 1):
-            buttons.append([
-                InlineKeyboardButton(
-                    f"📢 {channel}", 
-                    callback_data=f'fsub_info_{bot_id}'
-                ),
-                InlineKeyboardButton(
-                    f"❌ REMOVE", 
-                    callback_data=f'remove_fsub_{bot_id}_{idx-1}'
-                )
-            ])
-    else:
-        buttons.append([InlineKeyboardButton('No channels added yet', callback_data='none')])
+    buttons.append([InlineKeyboardButton('✏️ Set New', callback_data=f'input_start_text_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'appearance_{bot_id}')])
     
-    # Add channel button (only if less than 6)
-    if len(fsub_channels) < 6:
-        buttons.append([InlineKeyboardButton('➕ ADD CHANNEL', callback_data=f'add_fsub_{bot_id}')])
-    
-    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
-    
-    text = (
-        f"<b>🔒 FORCE SUBSCRIBE CHANNELS</b>\n\n"
-        f"<b>Total Channels:</b> {len(fsub_channels)}/6\n\n"
-        f"<i>Users must join these channels to use your bot.</i>"
-    )
-    
+    status = "Custom" if current else "Default"
+    text = f"<b>📝 Start Message</b>\n<b>Status:</b> {status}"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# Add Force Sub Channel
-@Client.on_callback_query(filters.regex("^add_fsub_"))
-async def add_force_sub(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    fsub_channels = settings.get('force_sub_channels', [])
-    
-    if len(fsub_channels) >= 6:
-        return await query.answer("Maximum 6 channels allowed!", show_alert=True)
-    
-    user_states[query.from_user.id] = {'action': 'add_fsub', 'bot_id': bot_id}
-    
-    await query.message.edit_text(
-        "<b>📢 ADD FORCE SUBSCRIBE CHANNEL</b>\n\n"
-        "Send channel username or ID:\n\n"
-        "Examples:\n"
-        "• <code>@your_channel</code>\n"
-        "• <code>-1001234567890</code>\n\n"
-        "Send /cancel to cancel this operation.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'set_fsub_{bot_id}')
-        ]])
-    )
-    await query.answer()
-
-# Remove Force Sub Channel
-@Client.on_callback_query(filters.regex("^remove_fsub_"))
-async def remove_force_sub(client, query: CallbackQuery):
-    parts = query.data.split("_")
-    bot_id = int(parts[2])
-    channel_idx = int(parts[3])
-    
-    clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    fsub_channels = settings.get('force_sub_channels', [])
-    
-    if channel_idx < len(fsub_channels):
-        removed_channel = fsub_channels.pop(channel_idx)
-        await clone_db.update_clone_setting(bot_id, 'force_sub_channels', fsub_channels)
-        await query.answer(f"Removed: {removed_channel}", show_alert=True)
-    
-    await force_sub_menu(client, query)
-
-# Start Text Setting
-@Client.on_callback_query(filters.regex("^set_start_text_"))
-async def set_start_text(client, query: CallbackQuery):
+@Client.on_callback_query(filters.regex("^input_start_text_"))
+async def input_start_text(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[3])
     user_states[query.from_user.id] = {'action': 'start_text', 'bot_id': bot_id}
     
     await query.message.edit_text(
-        "<b>📝 SET START TEXT</b>\n\n"
-        "Send your custom start message.\n"
-        "You can use HTML formatting.\n\n"
-        "Send /cancel to cancel this operation.",
+        "<b>Send start message:</b>\n\n"
+        "Variables: <code>{mention}</code>\n"
+        "Format: HTML\n\n"
+        "/cancel to abort",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'customize_{bot_id}')
+            InlineKeyboardButton('« Cancel', callback_data=f'start_text_{bot_id}')
         ]])
     )
-    await query.answer()
 
-# Start Picture Setting
-@Client.on_callback_query(filters.regex("^set_start_pic_"))
-async def set_start_picture(client, query: CallbackQuery):
+@Client.on_callback_query(filters.regex("^remove_start_text_"))
+async def remove_start_text(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[3])
-    user_states[query.from_user.id] = {'action': 'start_pic', 'bot_id': bot_id}
-    
-    await query.message.edit_text(
-        "<b>🖼️ SET START PICTURE</b>\n\n"
-        "Send a photo or photo URL.\n"
-        "Send /remove to remove current photo.\n\n"
-        "Send /cancel to cancel this operation.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'customize_{bot_id}')
-        ]])
-    )
-    await query.answer()
+    await clone_db.update_clone_setting(bot_id, 'start_message', None)
+    await query.answer("✅ Removed!", show_alert=True)
+    await start_text_menu(client, query)
 
-# Toggle Public Use
-@Client.on_callback_query(filters.regex("^toggle_public_"))
-async def toggle_public_use(client, query: CallbackQuery):
+@Client.on_callback_query(filters.regex("^preview_start_"))
+async def preview_start(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
     clone = await clone_db.get_clone(bot_id)
-    current = clone.get('settings', {}).get('public_use', True)
+    msg = clone.get('settings', {}).get('start_message', 'No message set')
     
-    new_status = not current
-    await clone_db.update_clone_setting(bot_id, 'public_use', new_status)
-    
-    await query.answer(
-        f"Public Use: {'✅ Enabled' if new_status else '❌ Disabled'}", 
-        show_alert=True
-    )
-    await customize_clone(client, query)
+    await query.answer(f"Preview:\n{msg[:150]}...", show_alert=True)
 
-# MongoDB Setting
-@Client.on_callback_query(filters.regex("^set_mongo_"))
-async def set_mongo_db(client, query: CallbackQuery):
+# Start Photo
+@Client.on_callback_query(filters.regex("^start_photo_"))
+async def start_photo_menu(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
     clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    current_mongo = settings.get('mongo_db')
+    current = clone.get('settings', {}).get('start_photo')
     
     buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_start_photo_{bot_id}')])
     
-    if current_mongo:
-        status_text = f"<b>✅ Custom MongoDB Connected</b>\n\n<code>{current_mongo[:50]}...</code>"
-        buttons.append([
-            InlineKeyboardButton('🗑️ REMOVE (Use Default)', callback_data=f'remove_mongo_{bot_id}')
-        ])
-    else:
-        status_text = "<b>📊 Using Default MongoDB</b>\n\n<i>Clone is using parent bot's database.</i>"
+    buttons.append([InlineKeyboardButton('📤 Upload New', callback_data=f'input_start_photo_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'appearance_{bot_id}')])
     
-    buttons.append([InlineKeyboardButton('➕ SET CUSTOM MONGODB', callback_data=f'add_mongo_{bot_id}')])
-    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
-    
-    text = (
-        f"<b>🗄️ MONGODB SETTINGS</b>\n\n"
-        f"{status_text}\n\n"
-        f"<i>Custom MongoDB allows clone to use separate database.</i>"
-    )
-    
+    status = "Custom" if current else "Default"
+    text = f"<b>🖼️ Start Photo</b>\n<b>Status:</b> {status}"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# Add MongoDB
-@Client.on_callback_query(filters.regex("^add_mongo_"))
-async def add_mongo_db(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    user_states[query.from_user.id] = {'action': 'add_mongo', 'bot_id': bot_id}
+@Client.on_callback_query(filters.regex("^input_start_photo_"))
+async def input_start_photo(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    user_states[query.from_user.id] = {'action': 'start_photo', 'bot_id': bot_id}
     
     await query.message.edit_text(
-        "<b>🗄️ SET CUSTOM MONGODB</b>\n\n"
-        "Send your MongoDB connection URI:\n\n"
-        "Example:\n"
-        "<code>mongodb+srv://username:password@cluster.mongodb.net</code>\n\n"
-        "Send /cancel to cancel this operation.",
+        "<b>Send photo or URL:</b>\n\n"
+        "/remove to delete\n"
+        "/cancel to abort",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'set_mongo_{bot_id}')
+            InlineKeyboardButton('« Cancel', callback_data=f'start_photo_{bot_id}')
         ]])
     )
-    await query.answer()
 
-# Remove MongoDB
-@Client.on_callback_query(filters.regex("^remove_mongo_"))
-async def remove_mongo_db(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    
-    await clone_db.update_clone_setting(bot_id, 'mongo_db', None)
-    await query.answer("✅ Switched to default MongoDB!", show_alert=True)
-    await set_mongo_db(client, query)
+@Client.on_callback_query(filters.regex("^remove_start_photo_"))
+async def remove_start_photo(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    await clone_db.update_clone_setting(bot_id, 'start_photo', None)
+    await query.answer("✅ Removed!", show_alert=True)
+    await start_photo_menu(client, query)
 
-# Log Channel Setting
-@Client.on_callback_query(filters.regex("^set_log_"))
-async def set_log_channel(client, query: CallbackQuery):
+# Start Button
+@Client.on_callback_query(filters.regex("^start_button_"))
+async def start_button_menu(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
     clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    log_channel = settings.get('log_channel')
+    current = clone.get('settings', {}).get('start_button')
     
     buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton('👁️ Preview', callback_data=f'preview_button_{bot_id}')])
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_start_button_{bot_id}')])
     
-    if log_channel:
-        buttons.append([
-            InlineKeyboardButton(f'📢 {log_channel}', callback_data='log_info'),
-            InlineKeyboardButton('❌ REMOVE', callback_data=f'remove_log_{bot_id}')
-        ])
-    else:
-        buttons.append([InlineKeyboardButton('No log channel set', callback_data='none')])
+    buttons.append([InlineKeyboardButton('✏️ Set New', callback_data=f'input_start_button_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'appearance_{bot_id}')])
     
-    buttons.append([InlineKeyboardButton('➕ SET LOG CHANNEL', callback_data=f'add_log_{bot_id}')])
-    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
-    
-    text = (
-        f"<b>📝 LOG CHANNEL</b>\n\n"
-        f"<i>All bot activities will be logged here.</i>"
-    )
-    
+    status = "Custom" if current else "Default"
+    text = f"<b>🔘 Start Button</b>\n<b>Status:</b> {status}"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# Add Log Channel
-@Client.on_callback_query(filters.regex("^add_log_"))
-async def add_log_channel(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    user_states[query.from_user.id] = {'action': 'add_log', 'bot_id': bot_id}
-    
-    await query.message.edit_text(
-        "<b>📝 SET LOG CHANNEL</b>\n\n"
-        "Send channel username or ID:\n\n"
-        "Examples:\n"
-        "• <code>@your_log_channel</code>\n"
-        "• <code>-1001234567890</code>\n\n"
-        "Send /cancel to cancel this operation.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'set_log_{bot_id}')
-        ]])
-    )
-    await query.answer()
-
-# Remove Log Channel
-@Client.on_callback_query(filters.regex("^remove_log_"))
-async def remove_log_channel(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
-    
-    await clone_db.update_clone_setting(bot_id, 'log_channel', None)
-    await query.answer("✅ Log channel removed!", show_alert=True)
-    await set_log_channel(client, query)
-
-# Database Channel Setting
-@Client.on_callback_query(filters.regex("^set_db_channel_"))
-async def set_database_channel(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[3])
-    clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    db_channel = settings.get('db_channel')
-    
-    buttons = []
-    
-    if db_channel:
-        buttons.append([
-            InlineKeyboardButton(f'📢 {db_channel}', callback_data='db_info'),
-            InlineKeyboardButton('❌ REMOVE', callback_data=f'remove_db_ch_{bot_id}')
-        ])
-    else:
-        buttons.append([InlineKeyboardButton('No database channel set', callback_data='none')])
-    
-    buttons.append([InlineKeyboardButton('➕ SET DATABASE CHANNEL', callback_data=f'add_db_ch_{bot_id}')])
-    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
-    
-    text = (
-        f"<b>🗄️ DATABASE CHANNEL</b>\n\n"
-        f"<i>Files will be stored in this channel.</i>"
-    )
-    
-    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
-# Add Database Channel
-@Client.on_callback_query(filters.regex("^add_db_ch_"))
-async def add_database_channel(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[3])
-    user_states[query.from_user.id] = {'action': 'add_db_channel', 'bot_id': bot_id}
-    
-    await query.message.edit_text(
-        "<b>🗄️ SET DATABASE CHANNEL</b>\n\n"
-        "Send channel username or ID:\n\n"
-        "Examples:\n"
-        "• <code>@your_db_channel</code>\n"
-        "• <code>-1001234567890</code>\n\n"
-        "Send /cancel to cancel this operation.",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'set_db_channel_{bot_id}')
-        ]])
-    )
-    await query.answer()
-
-# Remove Database Channel
-@Client.on_callback_query(filters.regex("^remove_db_ch_"))
-async def remove_database_channel(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[3])
-    
-    await clone_db.update_clone_setting(bot_id, 'db_channel', None)
-    await query.answer("✅ Database channel removed!", show_alert=True)
-    await set_database_channel(client, query)
-
-# Start Button Setting
-@Client.on_callback_query(filters.regex("^set_start_btn_"))
-async def set_start_button(client, query: CallbackQuery):
+@Client.on_callback_query(filters.regex("^input_start_button_"))
+async def input_start_button(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[3])
     user_states[query.from_user.id] = {'action': 'start_button', 'bot_id': bot_id}
     
     await query.message.edit_text(
-        "<b>🔘 SET START BUTTON</b>\n\n"
-        "Send button text and URL in this format:\n\n"
-        "<code>Button Text - https://example.com</code>\n\n"
-        "Example:\n"
-        "<code>Join Channel - https://t.me/yourchannel</code>\n\n"
-        "Send /remove to remove button.\n"
-        "Send /cancel to cancel this operation.",
+        "<b>Send button:</b>\n\n"
+        "Format: <code>Text - URL</code>\n"
+        "Example: <code>Join - https://t.me/channel</code>\n\n"
+        "/cancel to abort",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'customize_{bot_id}')
+            InlineKeyboardButton('« Cancel', callback_data=f'start_button_{bot_id}')
         ]])
     )
-    await query.answer()
 
-# Restart Bot
-@Client.on_callback_query(filters.regex("^restart_"))
-async def restart_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
-    
-    # Here you would implement restart logic
-    await query.answer("🔄 Clone bot restart initiated!", show_alert=True)
-    # Add actual restart code here
-    
-    await customize_clone(client, query)
+@Client.on_callback_query(filters.regex("^remove_start_button_"))
+async def remove_start_button(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    await clone_db.update_clone_setting(bot_id, 'start_button', None)
+    await query.answer("✅ Removed!", show_alert=True)
+    await start_button_menu(client, query)
 
-# Deactivate Bot
-@Client.on_callback_query(filters.regex("^deactivate_"))
-async def deactivate_clone(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[1])
+# File Caption
+@Client.on_callback_query(filters.regex("^file_caption_"))
+async def file_caption_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('file_caption')
     
-    buttons = [
-        [
-            InlineKeyboardButton('✅ YES, DEACTIVATE', callback_data=f'confirm_deactivate_{bot_id}'),
-            InlineKeyboardButton('❌ NO', callback_data=f'customize_{bot_id}')
-        ]
-    ]
+    buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton('👁️ Preview', callback_data=f'preview_caption_{bot_id}')])
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_caption_{bot_id}')])
+    
+    buttons.append([InlineKeyboardButton('✏️ Set New', callback_data=f'input_caption_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'appearance_{bot_id}')])
+    
+    status = "Custom" if current else "Default"
+    text = f"<b>📝 File Caption</b>\n<b>Status:</b> {status}"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^input_caption_"))
+async def input_caption(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'file_caption', 'bot_id': bot_id}
     
     await query.message.edit_text(
-        "⚠️ <b>DEACTIVATE CLONE?</b>\n\n"
-        "This will stop your clone bot temporarily.\n"
-        "You can reactivate it anytime.",
-        reply_markup=InlineKeyboardMarkup(buttons)
+        "<b>Send caption template:</b>\n\n"
+        "Variables:\n"
+        "<code>{filename}</code> - File name\n"
+        "<code>{size}</code> - File size\n"
+        "<code>{caption}</code> - Original caption\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'file_caption_{bot_id}')
+        ]])
     )
-    await query.answer()
 
-@Client.on_callback_query(filters.regex("^confirm_deactivate_"))
-async def confirm_deactivate(client, query: CallbackQuery):
+@Client.on_callback_query(filters.regex("^remove_caption_"))
+async def remove_caption(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'file_caption', None)
+    await query.answer("✅ Removed!", show_alert=True)
+    await file_caption_menu(client, query)
+
+# ==================== SECURITY ====================
+@Client.on_callback_query(filters.regex("^security_"))
+async def security_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
     
-    await clone_db.deactivate_clone(bot_id)
-    await query.answer("✅ Clone deactivated!", show_alert=True)
-    await customize_clone(client, query)
+    fsub_count = len(settings.get('force_sub_channels', []))
+    auto_del = "✅" if settings.get('auto_delete') else "❌"
+    protect = "✅" if settings.get('protect_mode') else "❌"
+    verify = "✅" if settings.get('verification') else "❌"
+    
+    buttons = [
+        [InlineKeyboardButton(f'Force Sub ({fsub_count}/6)', callback_data=f'fsub_manage_{bot_id}')],
+        [InlineKeyboardButton(f'{auto_del} Auto Delete', callback_data=f'auto_delete_{bot_id}')],
+        [InlineKeyboardButton(f'{protect} Protect Mode', callback_data=f'protect_mode_{bot_id}')],
+        [InlineKeyboardButton(f'{verify} Verification', callback_data=f'verification_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]
+    ]
+    
+    text = "<b>🔒 Security Settings</b>\n<i>Manage access & protection</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# Admins Setting
-@Client.on_callback_query(filters.regex("^set_admins_"))
-async def set_admins(client, query: CallbackQuery):
+# Force Subscribe
+@Client.on_callback_query(filters.regex("^fsub_manage_"))
+async def fsub_manage(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    channels = settings.get('force_sub_channels', [])
+    
+    buttons = []
+    for idx, ch in enumerate(channels):
+        buttons.append([
+            InlineKeyboardButton(f'📢 {ch}', callback_data='fsub_info'),
+            InlineKeyboardButton('❌', callback_data=f'remove_fsub_{bot_id}_{idx}')
+        ])
+    
+    if len(channels) < 6:
+        buttons.append([InlineKeyboardButton('➕ Add Channel', callback_data=f'add_fsub_{bot_id}')])
+    
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'security_{bot_id}')])
+    
+    text = f"<b>🔒 Force Subscribe</b>\n<b>Channels:</b> {len(channels)}/6"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^add_fsub_"))
+async def add_fsub(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'add_fsub', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send channel:</b>\n\n"
+        "Format: <code>@username</code> or <code>-100xxx</code>\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'fsub_manage_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^remove_fsub_"))
+async def remove_fsub(client, query: CallbackQuery):
+    parts = query.data.split("_")
+    bot_id = int(parts[2])
+    idx = int(parts[3])
+    
+    clone = await clone_db.get_clone(bot_id)
+    channels = clone.get('settings', {}).get('force_sub_channels', [])
+    
+    if idx < len(channels):
+        removed = channels.pop(idx)
+        await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
+        await query.answer(f"✅ Removed: {removed}", show_alert=True)
+    
+    await fsub_manage(client, query)
+
+# Auto Delete
+@Client.on_callback_query(filters.regex("^auto_delete_"))
+async def auto_delete_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    
+    enabled = settings.get('auto_delete', False)
+    time_sec = settings.get('auto_delete_time', 1800)
+    minutes = time_sec // 60
+    
+    buttons = [
+        [InlineKeyboardButton(
+            f"{'✅ Enabled' if enabled else '❌ Disabled'}", 
+            callback_data=f'toggle_autodel_{bot_id}'
+        )],
+        [InlineKeyboardButton('⏱️ Set Time', callback_data=f'set_autodel_time_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'security_{bot_id}')]
+    ]
+    
+    status = "ON" if enabled else "OFF"
+    text = f"<b>🗑️ Auto Delete</b>\n<b>Status:</b> {status}\n<b>Time:</b> {minutes} min"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^toggle_autodel_"))
+async def toggle_autodel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('auto_delete', False)
+    
+    await clone_db.update_clone_setting(bot_id, 'auto_delete', not current)
+    await query.answer(f"✅ {'Enabled' if not current else 'Disabled'}!", show_alert=True)
+    await auto_delete_menu(client, query)
+
+@Client.on_callback_query(filters.regex("^set_autodel_time_"))
+async def set_autodel_time(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    user_states[query.from_user.id] = {'action': 'autodel_time', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send time in seconds:</b>\n\n"
+        "Min: 20 seconds\n"
+        "Examples: <code>60</code>, <code>300</code>, <code>600</code>\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'auto_delete_{bot_id}')
+        ]])
+    )
+
+# Protect Mode
+@Client.on_callback_query(filters.regex("^protect_mode_"))
+async def protect_mode_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    enabled = settings.get('protect_mode', False)
+    
+    buttons = [
+        [InlineKeyboardButton(
+            f"{'✅ Enabled' if enabled else '❌ Disabled'}", 
+            callback_data=f'toggle_protect_{bot_id}'
+        )],
+        [InlineKeyboardButton('« Back', callback_data=f'security_{bot_id}')]
+    ]
+    
+    status = "ON" if enabled else "OFF"
+    text = f"<b>🛡️ Protect Mode</b>\n<b>Status:</b> {status}\n\n<i>Disable forward/save</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^toggle_protect_"))
+async def toggle_protect(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('protect_mode', False)
+    
+    await clone_db.update_clone_setting(bot_id, 'protect_mode', not current)
+    await query.answer(f"✅ {'Enabled' if not current else 'Disabled'}!", show_alert=True)
+    await protect_mode_menu(client, query)
+
+# Verification
+@Client.on_callback_query(filters.regex("^verification_"))
+async def verification_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    
+    enabled = settings.get('verification', False)
+    has_api = "✅" if settings.get('shortlink_api') else "❌"
+    has_url = "✅" if settings.get('shortlink_url') else "❌"
+    
+    buttons = [
+        [InlineKeyboardButton(
+            f"{'✅ Enabled' if enabled else '❌ Disabled'}", 
+            callback_data=f'toggle_verify_{bot_id}'
+        )],
+        [InlineKeyboardButton(f'{has_api} Shortlink API', callback_data=f'set_api_{bot_id}')],
+        [InlineKeyboardButton(f'{has_url} Shortlink URL', callback_data=f'set_url_{bot_id}')],
+        [InlineKeyboardButton('Tutorial Link', callback_data=f'set_tutorial_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'security_{bot_id}')]
+    ]
+    
+    status = "ON" if enabled else "OFF"
+    text = f"<b>🔐 Verification</b>\n<b>Status:</b> {status}"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^toggle_verify_"))
+async def toggle_verify(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('verification', False)
+    
+    await clone_db.update_clone_setting(bot_id, 'verification', not current)
+    await query.answer(f"✅ {'Enabled' if not current else 'Disabled'}!", show_alert=True)
+    await verification_menu(client, query)
+
+@Client.on_callback_query(filters.regex("^set_api_"))
+async def set_shortlink_api(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'shortlink_api', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send Shortlink API:</b>\n\n"
+        "Get from your shortlink provider\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'verification_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^set_url_"))
+async def set_shortlink_url(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'shortlink_url', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send Shortlink URL:</b>\n\n"
+        "Example: <code>https://droplink.co</code>\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'verification_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^set_tutorial_"))
+async def set_tutorial(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'tutorial_link', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send Tutorial Link:</b>\n\n"
+        "YouTube or any tutorial URL\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'verification_{bot_id}')
+        ]])
+    )
+
+# ==================== FILES ====================
+@Client.on_callback_query(filters.regex("^files_"))
+async def files_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    
+    protect = "✅" if settings.get('protect_forward') else "❌"
+    
+    buttons = [
+        [InlineKeyboardButton('📝 Caption Template', callback_data=f'file_caption_{bot_id}')],
+        [InlineKeyboardButton(f'{protect} Protect Forward', callback_data=f'toggle_forward_{bot_id}')],
+        [InlineKeyboardButton('📏 File Size Limit', callback_data=f'file_limit_{bot_id}')],
+        [InlineKeyboardButton('📂 Allowed Types', callback_data=f'file_types_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]
+    ]
+    
+    text = "<b>📁 File Settings</b>\n<i>Manage file behavior</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^toggle_forward_"))
+async def toggle_forward(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('protect_forward', False)
+    
+    await clone_db.update_clone_setting(bot_id, 'protect_forward', not current)
+    await query.answer(f"✅ {'Enabled' if not current else 'Disabled'}!", show_alert=True)
+    await files_menu(client, query)
+
+@Client.on_callback_query(filters.regex("^file_limit_"))
+async def file_limit_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'file_limit', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Set file size limit (MB):</b>\n\n"
+        "Example: <code>500</code> for 500MB\n"
+        "Send <code>0</code> for no limit\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'files_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^file_types_"))
+async def file_types_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    allowed = settings.get('allowed_types', ['all'])
+    
+    types = ['video', 'audio', 'document', 'photo', 'all']
+    buttons = []
+    
+    for t in types:
+        check = "✅" if t in allowed else "☐"
+        buttons.append([InlineKeyboardButton(f'{check} {t.title()}', callback_data=f'toggle_type_{bot_id}_{t}')])
+    
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'files_{bot_id}')])
+    
+    text = f"<b>📂 Allowed File Types</b>\n<b>Selected:</b> {', '.join(allowed)}"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^toggle_type_"))
+async def toggle_file_type(client, query: CallbackQuery):
+    parts = query.data.split("_")
+    bot_id = int(parts[2])
+    file_type = parts[3]
+    
+    clone = await clone_db.get_clone(bot_id)
+    allowed = clone.get('settings', {}).get('allowed_types', ['all'])
+    
+    if file_type == 'all':
+        allowed = ['all']
+    else:
+        if 'all' in allowed:
+            allowed.remove('all')
+        
+        if file_type in allowed:
+            allowed.remove(file_type)
+        else:
+            allowed.append(file_type)
+        
+        if not allowed:
+            allowed = ['all']
+    
+    await clone_db.update_clone_setting(bot_id, 'allowed_types', allowed)
+    await file_types_menu(client, query)
+
+# ==================== DATABASE ====================
+@Client.on_callback_query(filters.regex("^database_"))
+async def database_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    
+    has_mongo = "✅" if settings.get('mongo_db') else "❌"
+    has_log = "✅" if settings.get('log_channel') else "❌"
+    has_db = "✅" if settings.get('db_channel') else "❌"
+    
+    buttons = [
+        [InlineKeyboardButton(f'{has_mongo} MongoDB URI', callback_data=f'mongo_db_{bot_id}')],
+        [InlineKeyboardButton(f'{has_log} Log Channel', callback_data=f'log_channel_{bot_id}')],
+        [InlineKeyboardButton(f'{has_db} DB Channel', callback_data=f'db_channel_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]
+    ]
+    
+    text = "<b>📊 Database Settings</b>\n<i>Storage & logging config</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# MongoDB
+@Client.on_callback_query(filters.regex("^mongo_db_"))
+async def mongo_db_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('mongo_db')
+    
+    buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_mongo_{bot_id}')])
+    else:
+        buttons.append([InlineKeyboardButton('➕ Add Custom', callback_data=f'input_mongo_{bot_id}')])
+    
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'database_{bot_id}')])
+    
+    status = "Custom DB" if current else "Default DB"
+    text = f"<b>🗄️ MongoDB</b>\n<b>Status:</b> {status}"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^input_mongo_"))
+async def input_mongo(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'mongo_db', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send MongoDB URI:</b>\n\n"
+        "Format: <code>mongodb+srv://user:pass@cluster.mongodb.net</code>\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'mongo_db_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^remove_mongo_"))
+async def remove_mongo(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'mongo_db', None)
+    await query.answer("✅ Removed! Using default", show_alert=True)
+    await mongo_db_menu(client, query)
+
+# Log Channel
+@Client.on_callback_query(filters.regex("^log_channel_"))
+async def log_channel_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('log_channel')
+    
+    buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton(f'📢 {current}', callback_data='channel_info')])
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_log_{bot_id}')])
+    
+    buttons.append([InlineKeyboardButton('➕ Set Channel', callback_data=f'input_log_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'database_{bot_id}')])
+    
+    status = current if current else "Not set"
+    text = f"<b>📝 Log Channel</b>\n<b>Channel:</b> {status}\n\n<i>Activity logs stored here</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^input_log_"))
+async def input_log(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'log_channel', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send channel:</b>\n\n"
+        "Format: <code>@username</code> or <code>-100xxx</code>\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'log_channel_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^remove_log_"))
+async def remove_log(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'log_channel', None)
+    await query.answer("✅ Removed!", show_alert=True)
+    await log_channel_menu(client, query)
+
+# DB Channel (File Storage)
+@Client.on_callback_query(filters.regex("^db_channel_"))
+async def db_channel_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('db_channel')
+    
+    buttons = []
+    if current:
+        buttons.append([InlineKeyboardButton(f'📢 {current}', callback_data='channel_info')])
+        buttons.append([InlineKeyboardButton('🗑️ Remove', callback_data=f'remove_db_{bot_id}')])
+    
+    buttons.append([InlineKeyboardButton('➕ Set Channel', callback_data=f'input_db_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'database_{bot_id}')])
+    
+    status = current if current else "Not set"
+    text = f"<b>🗄️ DB Channel</b>\n<b>Channel:</b> {status}\n\n<i>Files stored here</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^input_db_"))
+async def input_db_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'db_channel', 'bot_id': bot_id}
+    
+    await query.message.edit_text(
+        "<b>Send channel:</b>\n\n"
+        "Format: <code>@username</code> or <code>-100xxx</code>\n\n"
+        "/cancel to abort",
+        reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Cancel', callback_data=f'db_channel_{bot_id}')
+        ]])
+    )
+
+@Client.on_callback_query(filters.regex("^remove_db_"))
+async def remove_db_channel(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'db_channel', None)
+    await query.answer("✅ Removed!", show_alert=True)
+    await db_channel_menu(client, query)
+
+# ==================== ADMINS ====================
+@Client.on_callback_query(filters.regex("^admins_"))
+async def admins_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
     clone = await clone_db.get_clone(bot_id)
     settings = clone.get('settings', {})
     admins = settings.get('admins', [])
     
     buttons = []
+    for idx, admin_id in enumerate(admins[:10]):
+        buttons.append([
+            InlineKeyboardButton(f'👤 {admin_id}', callback_data='admin_info'),
+            InlineKeyboardButton('❌', callback_data=f'remove_admin_{bot_id}_{idx}')
+        ])
     
-    if admins:
-        for idx, admin_id in enumerate(admins, 1):
-            buttons.append([
-                InlineKeyboardButton(f"👤 {admin_id}", callback_data='admin_info'),
-                InlineKeyboardButton("❌", callback_data=f'remove_admin_{bot_id}_{idx-1}')
-            ])
-    else:
-        buttons.append([InlineKeyboardButton('No admins added yet', callback_data='none')])
+    if len(admins) < 10:
+        buttons.append([InlineKeyboardButton('➕ Add Admin', callback_data=f'add_admin_{bot_id}')])
     
-    buttons.append([InlineKeyboardButton('➕ ADD ADMIN', callback_data=f'add_admin_{bot_id}')])
-    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')])
     
-    text = (
-        f"<b>👥 ADMINS MANAGEMENT</b>\n\n"
-        f"<b>Total Admins:</b> {len(admins)}\n\n"
-        f"<i>Admins can manage files and settings.</i>"
-    )
-    
+    text = f"<b>👥 Admins</b>\n<b>Total:</b> {len(admins)}/10"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# Add Admin
 @Client.on_callback_query(filters.regex("^add_admin_"))
 async def add_admin(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
     user_states[query.from_user.id] = {'action': 'add_admin', 'bot_id': bot_id}
     
     await query.message.edit_text(
-        "<b>👤 ADD ADMIN</b>\n\n"
-        "Send user ID to add as admin:\n\n"
+        "<b>Send user ID:</b>\n\n"
         "Example: <code>123456789</code>\n\n"
-        "Send /cancel to cancel this operation.",
+        "/cancel to abort",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('❌ CANCEL', callback_data=f'set_admins_{bot_id}')
+            InlineKeyboardButton('« Cancel', callback_data=f'admins_{bot_id}')
         ]])
     )
-    await query.answer()
 
-# Remove Admin
 @Client.on_callback_query(filters.regex("^remove_admin_"))
 async def remove_admin(client, query: CallbackQuery):
     parts = query.data.split("_")
     bot_id = int(parts[2])
-    admin_idx = int(parts[3])
+    idx = int(parts[3])
     
     clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
-    admins = settings.get('admins', [])
+    admins = clone.get('settings', {}).get('admins', [])
     
-    if admin_idx < len(admins):
-        removed_admin = admins.pop(admin_idx)
+    if idx < len(admins):
+        removed = admins.pop(idx)
         await clone_db.update_clone_setting(bot_id, 'admins', admins)
-        await query.answer(f"Removed Admin: {removed_admin}", show_alert=True)
+        await query.answer(f"✅ Removed: {removed}", show_alert=True)
     
-    await set_admins(client, query)
+    await admins_menu(client, query)
 
-# Bot Status
-@Client.on_callback_query(filters.regex("^bot_status_"))
-async def bot_status(client, query: CallbackQuery):
-    bot_id = int(query.data.split("_")[2])
+# ==================== CHANNELS ====================
+@Client.on_callback_query(filters.regex("^channels_"))
+async def channels_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    
+    fsub = len(settings.get('force_sub_channels', []))
+    log = settings.get('log_channel', 'Not set')
+    db = settings.get('db_channel', 'Not set')
+    
+    buttons = [
+        [InlineKeyboardButton(f'Force Sub ({fsub})', callback_data=f'fsub_manage_{bot_id}')],
+        [InlineKeyboardButton('📝 Log Channel', callback_data=f'log_channel_{bot_id}')],
+        [InlineKeyboardButton('🗄️ DB Channel', callback_data=f'db_channel_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]
+    ]
+    
+    text = (
+        f"<b>📢 Channels</b>\n\n"
+        f"<b>Force Sub:</b> {fsub}\n"
+        f"<b>Log:</b> {log}\n"
+        f"<b>DB:</b> {db}"
+    )
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# ==================== STATISTICS ====================
+@Client.on_callback_query(filters.regex("^stats_"))
+async def stats_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
     clone = await clone_db.get_clone(bot_id)
     users_count = await clone_db.get_clone_users_count(bot_id)
+    
+    buttons = [[InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]]
+    
+    text = (
+        f"<b>📈 Statistics</b>\n\n"
+        f"<b>Bot:</b> @{clone['username']}\n"
+        f"<b>Users:</b> {users_count}\n"
+        f"<b>Created:</b> {clone.get('created_at', 'N/A')}\n"
+        f"<b>Last Used:</b> {clone.get('last_used', 'Never')}"
+    )
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# ==================== BOT SETTINGS ====================
+@Client.on_callback_query(filters.regex("^bot_settings_"))
+async def bot_settings_menu(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
     settings = clone.get('settings', {})
     
-    status_text = (
-        f"<b>📊 BOT STATUS</b>\n\n"
-        f"<b>🤖 Bot:</b> @{clone['username']}\n"
-        f"<b>📝 Name:</b> {clone['name']}\n"
-        f"<b>👥 Users:</b> {users_count}\n"
-        f"<b>📅 Created:</b> {clone.get('created_at', 'N/A')}\n"
-        f"<b>⏰ Last Used:</b> {clone.get('last_used', 'Never')}\n\n"
-        f"<b>⚙️ SETTINGS:</b>\n"
-        f"• Auto Delete: {'✅' if settings.get('auto_delete') else '❌'}\n"
-        f"• Public Use: {'✅' if settings.get('public_use', True) else '❌'}\n"
-        f"• Force Sub Channels: {len(settings.get('force_sub_channels', []))}\n"
-        f"• Admins: {len(settings.get('admins', []))}"
-    )
+    mode = "Public" if settings.get('public_use', True) else "Private"
+    maintenance = "ON" if settings.get('maintenance') else "OFF"
+    
+    buttons = [
+        [InlineKeyboardButton(f'🔓 Mode: {mode}', callback_data=f'toggle_mode_{bot_id}')],
+        [InlineKeyboardButton(f'🔧 Maintenance: {maintenance}', callback_data=f'toggle_maintenance_{bot_id}')],
+        [InlineKeyboardButton('🌍 Language', callback_data=f'language_{bot_id}')],
+        [InlineKeyboardButton('🕐 Timezone', callback_data=f'timezone_{bot_id}')],
+        [InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')]
+    ]
+    
+    text = "<b>⚙️ Bot Settings</b>\n<i>General configuration</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^toggle_mode_"))
+async def toggle_mode(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('public_use', True)
+    
+    await clone_db.update_clone_setting(bot_id, 'public_use', not current)
+    await query.answer(f"✅ Mode: {'Private' if current else 'Public'}!", show_alert=True)
+    await bot_settings_menu(client, query)
+
+@Client.on_callback_query(filters.regex("^toggle_maintenance_"))
+async def toggle_maintenance(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('maintenance', False)
+    
+    await clone_db.update_clone_setting(bot_id, 'maintenance', not current)
+    await query.answer(f"✅ Maintenance: {'ON' if not current else 'OFF'}!", show_alert=True)
+    await bot_settings_menu(client, query)
+
+# ==================== TOGGLE PUBLIC ====================
+@Client.on_callback_query(filters.regex("^toggle_public_"))
+async def toggle_public_use(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    current = clone.get('settings', {}).get('public_use', True)
+    
+    await clone_db.update_clone_setting(bot_id, 'public_use', not current)
+    await query.answer(f"✅ Mode: {'Private' if current else 'Public'}!", show_alert=True)
+    await customize_clone(client, query)
+
+# ==================== RESTART BOT ====================
+@Client.on_callback_query(filters.regex("^restart_"))
+async def restart_clone(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    await query.answer("🔄 Restart feature coming soon!", show_alert=True)
+
+# ==================== DEACTIVATE ====================
+@Client.on_callback_query(filters.regex("^deactivate_"))
+async def deactivate_clone(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    
+    buttons = [
+        [
+            InlineKeyboardButton('✅ Yes', callback_data=f'confirm_deactivate_{bot_id}'),
+            InlineKeyboardButton('❌ No', callback_data=f'customize_{bot_id}')
+        ]
+    ]
     
     await query.message.edit_text(
-        status_text,
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')
-        ]])
+        "<b>⚠️ Deactivate Clone?</b>\n\nBot will stop temporarily",
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
-    await query.answer()
 
-# Delete Clone
+@Client.on_callback_query(filters.regex("^confirm_deactivate_"))
+async def confirm_deactivate(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.update_clone_setting(bot_id, 'is_active', False)
+    await query.answer("✅ Deactivated!", show_alert=True)
+    await customize_clone(client, query)
+
+# ==================== DELETE ====================
 @Client.on_callback_query(filters.regex("^delete_(?!clone)"))
 async def delete_clone_confirm(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[1])
     
     buttons = [
         [
-            InlineKeyboardButton('✅ YES, DELETE', callback_data=f'confirm_delete_{bot_id}'),
-            InlineKeyboardButton('❌ NO', callback_data=f'customize_{bot_id}')
+            InlineKeyboardButton('✅ Yes, Delete', callback_data=f'confirm_delete_{bot_id}'),
+            InlineKeyboardButton('❌ No', callback_data=f'customize_{bot_id}')
         ]
     ]
     
     await query.message.edit_text(
-        "⚠️ <b>ARE YOU SURE?</b>\n\n"
-        "This will permanently delete your clone bot!\n"
-        "This action cannot be undone.",
+        "<b>⚠️ DELETE CLONE?</b>\n\nThis action cannot be undone!",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
-    await query.answer()
 
 @Client.on_callback_query(filters.regex("^confirm_delete_"))
 async def confirm_delete_clone(client, query: CallbackQuery):
@@ -625,15 +919,13 @@ async def confirm_delete_clone(client, query: CallbackQuery):
     
     await clone_db.delete_clone_by_id(bot_id)
     await query.message.edit_text(
-        "✅ <b>CLONE DELETED!</b>\n\n"
-        "Your clone bot has been successfully deleted.",
+        "<b>✅ Clone Deleted!</b>",
         reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('⬅️ BACK', callback_data='clone')
+            InlineKeyboardButton('« Back', callback_data='clone')
         ]])
     )
-    await query.answer()
 
-# Handle user input for settings
+# ==================== USER INPUT HANDLER ====================
 @Client.on_message(filters.private & filters.text, group=2)
 async def handle_setting_input(client, message):
     user_id = message.from_user.id
@@ -645,131 +937,169 @@ async def handle_setting_input(client, message):
     action = state['action']
     bot_id = state['bot_id']
     
-    # Cancel operation
     if message.text == '/cancel':
         del user_states[user_id]
-        buttons = [[InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')]]
-        return await message.reply(
-            "❌ Operation cancelled!", 
-            reply_markup=InlineKeyboardMarkup(buttons)
-        )
+        return await message.reply("❌ Cancelled!", reply_markup=InlineKeyboardMarkup([[
+            InlineKeyboardButton('« Back', callback_data=f'customize_{bot_id}')
+        ]]))
     
     try:
-        # Start text
+        # Start Text
         if action == 'start_text':
             await clone_db.update_clone_setting(bot_id, 'start_message', message.text)
             del user_states[user_id]
-            await message.reply(
-                "✅ Start text updated successfully!",
-                reply_markup=InlineKeyboardMarkup([[
-                    InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')
-                ]])
-            )
+            await message.reply("✅ Start message updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'start_text_{bot_id}')
+            ]]))
         
-        # Start picture
-        elif action == 'start_pic':
+        # Start Photo URL
+        elif action == 'start_photo':
             if message.text == '/remove':
                 await clone_db.update_clone_setting(bot_id, 'start_photo', None)
                 del user_states[user_id]
-                return await message.reply(
-                    "✅ Start photo removed!",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')
-                    ]])
-                )
+                return await message.reply("✅ Removed!", reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
+                ]]))
             
-            photo_url = message.text if message.text.startswith('http') else None
-            if photo_url:
-                await clone_db.update_clone_setting(bot_id, 'start_photo', photo_url)
+            if message.text.startswith('http'):
+                await clone_db.update_clone_setting(bot_id, 'start_photo', message.text)
                 del user_states[user_id]
-                await message.reply(
-                    "✅ Start photo updated!",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')
-                    ]])
-                )
+                await message.reply("✅ Photo updated!", reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
+                ]]))
             else:
-                await message.reply("❌ Invalid photo URL! Please send a valid URL.")
+                await message.reply("❌ Invalid URL!")
         
-        # Add Force Sub
+        # Start Button
+        elif action == 'start_button':
+            if ' - ' in message.text:
+                await clone_db.update_clone_setting(bot_id, 'start_button', message.text)
+                del user_states[user_id]
+                await message.reply("✅ Button updated!", reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('« Back', callback_data=f'start_button_{bot_id}')
+                ]]))
+            else:
+                await message.reply("❌ Invalid format! Use: Text - URL")
+        
+        # File Caption
+        elif action == 'file_caption':
+            await clone_db.update_clone_setting(bot_id, 'file_caption', message.text)
+            del user_states[user_id]
+            await message.reply("✅ Caption template updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'file_caption_{bot_id}')
+            ]]))
+        
+        # Force Sub Channel
         elif action == 'add_fsub':
             clone = await clone_db.get_clone(bot_id)
-            settings = clone.get('settings', {})
-            fsub_channels = settings.get('force_sub_channels', [])
+            channels = clone.get('settings', {}).get('force_sub_channels', [])
             
-            if len(fsub_channels) >= 6:
-                return await message.reply("❌ Maximum 6 channels allowed!")
+            if len(channels) >= 6:
+                return await message.reply("❌ Max 6 channels!")
             
             channel = message.text.strip()
-            if channel not in fsub_channels:
-                fsub_channels.append(channel)
-                await clone_db.update_clone_setting(bot_id, 'force_sub_channels', fsub_channels)
+            if channel not in channels:
+                channels.append(channel)
+                await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
                 del user_states[user_id]
-                await message.reply(
-                    f"✅ Channel added: {channel}",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton('⬅️ BACK', callback_data=f'set_fsub_{bot_id}')
-                    ]])
-                )
+                await message.reply(f"✅ Added: {channel}", reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('« Back', callback_data=f'fsub_manage_{bot_id}')
+                ]]))
             else:
-                await message.reply("❌ Channel already exists!")
+                await message.reply("❌ Already exists!")
         
-        # Add Admin
+        # Auto Delete Time
+        elif action == 'autodel_time':
+            time_sec = int(message.text)
+            if time_sec < 20:
+                return await message.reply("❌ Min 20 seconds!")
+            
+            await clone_db.update_clone_setting(bot_id, 'auto_delete_time', time_sec)
+            del user_states[user_id]
+            await message.reply(f"✅ Time set to {time_sec}s!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'auto_delete_{bot_id}')
+            ]]))
+        
+        # Shortlink API
+        elif action == 'shortlink_api':
+            await clone_db.update_clone_setting(bot_id, 'shortlink_api', message.text)
+            del user_states[user_id]
+            await message.reply("✅ API updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'verification_{bot_id}')
+            ]]))
+        
+        # Shortlink URL
+        elif action == 'shortlink_url':
+            await clone_db.update_clone_setting(bot_id, 'shortlink_url', message.text)
+            del user_states[user_id]
+            await message.reply("✅ URL updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'verification_{bot_id}')
+            ]]))
+        
+        # Tutorial Link
+        elif action == 'tutorial_link':
+            await clone_db.update_clone_setting(bot_id, 'tutorial_link', message.text)
+            del user_states[user_id]
+            await message.reply("✅ Tutorial link updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'verification_{bot_id}')
+            ]]))
+        
+        # MongoDB URI
+        elif action == 'mongo_db':
+            await clone_db.update_clone_setting(bot_id, 'mongo_db', message.text)
+            del user_states[user_id]
+            await message.reply("✅ MongoDB updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'mongo_db_{bot_id}')
+            ]]))
+        
+        # Log Channel
+        elif action == 'log_channel':
+            await clone_db.update_clone_setting(bot_id, 'log_channel', message.text)
+            del user_states[user_id]
+            await message.reply("✅ Log channel updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'log_channel_{bot_id}')
+            ]]))
+        
+        # DB Channel
+        elif action == 'db_channel':
+            await clone_db.update_clone_setting(bot_id, 'db_channel', message.text)
+            del user_states[user_id]
+            await message.reply("✅ DB channel updated!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'db_channel_{bot_id}')
+            ]]))
+        
+        # Admin
         elif action == 'add_admin':
-            try:
-                admin_id = int(message.text)
-                clone = await clone_db.get_clone(bot_id)
-                settings = clone.get('settings', {})
-                admins = settings.get('admins', [])
-                
-                if admin_id not in admins:
-                    admins.append(admin_id)
-                    await clone_db.update_clone_setting(bot_id, 'admins', admins)
-                    del user_states[user_id]
-                    await message.reply(
-                        f"✅ Admin added: {admin_id}",
-                        reply_markup=InlineKeyboardMarkup([[
-                            InlineKeyboardButton('⬅️ BACK', callback_data=f'set_admins_{bot_id}')
-                        ]])
-                    )
-                else:
-                    await message.reply("❌ Admin already exists!")
-            except ValueError:
-                await message.reply("❌ Invalid user ID! Please send a valid number.")
-        
-        # Custom Delete Time
-        elif action == 'custom_del_time':
-            try:
-                time_sec = int(message.text)
-                if time_sec < 20:
-                    return await message.reply("❌ Minimum time is 20 seconds!")
-                
-                await clone_db.update_clone_setting(bot_id, 'auto_delete_time', time_sec)
+            admin_id = int(message.text)
+            clone = await clone_db.get_clone(bot_id)
+            admins = clone.get('settings', {}).get('admins', [])
+            
+            if admin_id not in admins:
+                admins.append(admin_id)
+                await clone_db.update_clone_setting(bot_id, 'admins', admins)
                 del user_states[user_id]
-                
-                minutes = time_sec // 60
-                seconds = time_sec % 60
-                time_str = f"{minutes}m {seconds}s" if minutes > 0 else f"{seconds}s"
-                
-                await message.reply(
-                    f"✅ Auto delete time set to {time_sec}s ({time_str})!",
-                    reply_markup=InlineKeyboardMarkup([[
-                        InlineKeyboardButton('⬅️ BACK', callback_data=f'auto_delete_menu_{bot_id}')
-                    ]])
-                )
-            except ValueError:
-                await message.reply("❌ Invalid number! Please send a valid number of seconds.")
+                await message.reply(f"✅ Admin added: {admin_id}", reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton('« Back', callback_data=f'admins_{bot_id}')
+                ]]))
+            else:
+                await message.reply("❌ Already admin!")
+        
+        # File Size Limit
+        elif action == 'file_limit':
+            limit = int(message.text)
+            await clone_db.update_clone_setting(bot_id, 'file_size_limit', limit)
+            del user_states[user_id]
+            await message.reply(f"✅ Limit set to {limit}MB!", reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('« Back', callback_data=f'files_{bot_id}')
+            ]]))
     
+    except ValueError:
+        await message.reply("❌ Invalid input!")
     except Exception as e:
         logger.error(f"Error handling input: {e}")
-        await message.reply(
-            f"❌ Error: {str(e)}",
-            reply_markup=InlineKeyboardMarkup([[
-                InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')
-            ]])
-        )
+        await message.reply(f"❌ Error: {str(e)}")
 
-# Handle photo input
+# Handle Photo Input
 @Client.on_message(filters.private & filters.photo, group=2)
 async def handle_photo_input(client, message):
     user_id = message.from_user.id
@@ -778,7 +1108,7 @@ async def handle_photo_input(client, message):
         return
     
     state = user_states[user_id]
-    if state['action'] != 'start_pic':
+    if state['action'] != 'start_photo':
         return
     
     bot_id = state['bot_id']
@@ -786,11 +1116,8 @@ async def handle_photo_input(client, message):
     
     await clone_db.update_clone_setting(bot_id, 'start_photo', photo_id)
     del user_states[user_id]
-    await message.reply(
-        "✅ Start photo updated successfully!",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')
-        ]])
-    )
+    await message.reply("✅ Photo updated!", reply_markup=InlineKeyboardMarkup([[
+        InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
+    ]]))
 
-logger.info("✅ Clone customization module loaded")
+logger.info("✅ Clone customization loaded - Compact UI with all features!")
