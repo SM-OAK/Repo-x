@@ -25,15 +25,41 @@ class CloneDatabase:
             'username': username,
             'name': name,
             'is_active': True,
-            'created_at': datetime.now(timezone.utc),  # UTC aware
+            'created_at': datetime.now(timezone.utc),
+            'last_used': 'Never',
             'settings': {
+                # Appearance
                 'start_message': None,
-                'force_sub_channels': [],  # plural, consistent with code
+                'start_photo': None,
+                'start_button': None,
+                'file_caption': None,
+                
+                # Security
+                'force_sub_channels': [],
                 'auto_delete': False,
                 'auto_delete_time': 1800,
-                'no_forward': False,
-                'admins': [],  # consistent with clone_customize.py
-                'mode': 'public'
+                'protect_mode': False,
+                'verification': False,
+                'shortlink_api': None,
+                'shortlink_url': None,
+                'tutorial_link': None,
+                
+                # Files
+                'protect_forward': False,
+                'file_size_limit': 0,
+                'allowed_types': ['all'],
+                
+                # Database
+                'mongo_db': None,
+                'log_channel': None,
+                'db_channel': None,
+                
+                # Admins & Bot Settings
+                'admins': [],
+                'public_use': True,
+                'maintenance': False,
+                'language': 'en',
+                'timezone': 'UTC'
             }
         }
         await self.col.insert_one(clone_data)
@@ -60,9 +86,18 @@ class CloneDatabase:
     # UPDATE CLONE SETTINGS
     # -----------------------------
     async def update_clone_setting(self, bot_id, setting_key, value):
+        """Update a specific setting"""
         await self.col.update_one(
             {'bot_id': bot_id},
             {'$set': {f'settings.{setting_key}': value}}
+        )
+        return True
+    
+    async def update_last_used(self, bot_id):
+        """Update last used timestamp"""
+        await self.col.update_one(
+            {'bot_id': bot_id},
+            {'$set': {'last_used': datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')}}
         )
         return True
 
@@ -82,12 +117,21 @@ class CloneDatabase:
             {'$set': {'is_active': status}}
         )
         return True
+    
+    async def deactivate_clone(self, bot_id):
+        """Deactivate a clone"""
+        return await self.toggle_clone_status(bot_id, False)
+    
+    async def activate_clone(self, bot_id):
+        """Activate a clone"""
+        return await self.toggle_clone_status(bot_id, True)
 
     # -----------------------------
-    # GET NUMBER OF USERS (placeholder)
+    # GET NUMBER OF USERS
     # -----------------------------
     async def get_clone_users_count(self, bot_id):
-        # Placeholder, future implementation if user tracking per clone is added
+        """Get user count for specific clone - placeholder for now"""
+        # You can implement actual user tracking later
         return 0
 
 # -----------------------------
