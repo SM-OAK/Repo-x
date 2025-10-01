@@ -153,4 +153,3 @@ async def pages_callback(client, query: CallbackQuery):
     await query.answer("Use the navigation buttons!", show_alert=False)
 
 logger.info("✅ Main callbacks loaded")
-
