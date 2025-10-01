@@ -60,8 +60,10 @@ async def customize_clone(client, query: CallbackQuery):
 async def auto_delete_menu(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[3])
     clone = await clone_db.get_clone(bot_id)
-    settings = clone.get('settings', {})
+    if not clone:
+        return await query.answer("Clone not found!", show_alert=True)
     
+    settings = clone.get('settings', {})
     auto_del_enabled = settings.get('auto_delete', False)
     auto_del_time = settings.get('auto_delete_time', 300)
     
@@ -86,26 +88,80 @@ async def auto_delete_menu(client, query: CallbackQuery):
     
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
+
+# -----------------------------
+# TOGGLE AUTO DELETE
+# -----------------------------
 @Client.on_callback_query(filters.regex("^toggle_autodel_"))
 async def toggle_auto_delete(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
     clone = await clone_db.get_clone(bot_id)
+    if not clone:
+        return await query.answer("Clone not found!", show_alert=True)
+    
     current = clone.get('settings', {}).get('auto_delete', False)
     new_status = not current
     await clone_db.update_clone_setting(bot_id, 'auto_delete', new_status)
+    
     await query.answer(f"Auto Delete {'✅ Enabled' if new_status else '❌ Disabled'}", show_alert=True)
     await auto_delete_menu(client, query)
 
+
+# -----------------------------
+# CUSTOM DELETE TIME SETUP
+# -----------------------------
 @Client.on_callback_query(filters.regex("^custom_del_time_"))
 async def custom_delete_time(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[3])
     user_states[query.from_user.id] = {'action': 'custom_del_time', 'bot_id': bot_id}
+    
+    buttons = [[InlineKeyboardButton('❌ CANCEL', callback_data=f'auto_delete_menu_{bot_id}')]]
     await query.message.edit_text(
         "<b>⏰ ENTER CUSTOM DELETE TIME</b>\nSend time in seconds (min 20s)\nSend /cancel to cancel.",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('❌ CANCEL', callback_data=f'auto_delete_menu_{bot_id}')]])
+        reply_markup=InlineKeyboardMarkup(buttons)
     )
     await query.answer()
 
+
+# -----------------------------
+# HANDLE USER INPUT FOR CUSTOM AUTO DELETE TIME
+# -----------------------------
+from pyrogram.types import Message
+
+@Client.on_message(filters.private)
+async def handle_auto_delete_input(client, message: Message):
+    state = user_states.get(message.from_user.id)
+    if not state or state.get('action') != 'custom_del_time':
+        return  # Not in custom delete time mode
+    
+    bot_id = state.get('bot_id')
+    text = message.text.strip()
+    
+    if text.lower() == "/cancel":
+        user_states.pop(message.from_user.id, None)
+        from plugins.clone_customize import auto_delete_menu
+        await auto_delete_menu(client, await message.chat.get_member(message.from_user.id))
+        return await message.reply_text("❌ Auto Delete time setup cancelled.")
+    
+    if not text.isdigit():
+        return await message.reply_text("⚠️ Please send a valid number in seconds.")
+    
+    seconds = int(text)
+    if seconds < 20:
+        return await message.reply_text("⚠️ Minimum delete time is 20 seconds. Try again.")
+    
+    clone = await clone_db.get_clone(bot_id)
+    if not clone:
+        return await message.reply_text("❌ Clone not found!")
+    
+    await clone_db.update_clone_setting(bot_id, 'auto_delete_time', seconds)
+    user_states.pop(message.from_user.id, None)
+    
+    await message.reply_text(f"✅ Auto Delete time set to {seconds} seconds!")
+    
+    # Refresh Auto Delete menu
+    from plugins.clone_customize import auto_delete_menu
+    await auto_delete_menu(client, await message.chat.get_member(message.from_user.id))
 # -----------------------------
 # FORCE SUBSCRIBE MENU
 # -----------------------------
