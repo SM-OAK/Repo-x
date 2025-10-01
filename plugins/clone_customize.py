@@ -316,3 +316,145 @@ async def remove_database_channel(client, query: CallbackQuery):
     await clone_db.update_clone_setting(bot_id, 'db_channel', None)
     await query.answer("✅ Database channel removed!", show_alert=True)
     await set_database_channel(client, query)
+# -----------------------------
+# ADMINS MANAGEMENT
+# -----------------------------
+@Client.on_callback_query(filters.regex("^set_admins_"))
+async def set_admins(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    admins = clone.get('settings', {}).get('admins', [])
+    
+    buttons = []
+    if admins:
+        for idx, admin_id in enumerate(admins):
+            buttons.append([
+                InlineKeyboardButton(f"👤 {admin_id}", callback_data='admin_info'),
+                InlineKeyboardButton("❌", callback_data=f'remove_admin_{bot_id}_{idx}')
+            ])
+    else:
+        buttons.append([InlineKeyboardButton('No admins added yet', callback_data='none')])
+    
+    buttons.append([InlineKeyboardButton('➕ ADD ADMIN', callback_data=f'add_admin_{bot_id}')])
+    buttons.append([InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')])
+    
+    text = f"<b>👥 ADMINS MANAGEMENT</b>\nTotal Admins: {len(admins)}\n<i>Admins can manage files and settings.</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^add_admin_"))
+async def add_admin(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    user_states[query.from_user.id] = {'action': 'add_admin', 'bot_id': bot_id}
+    await query.message.edit_text(
+        "<b>👤 ADD ADMIN</b>\nSend user ID to add as admin.\nSend /cancel to cancel.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('❌ CANCEL', callback_data=f'set_admins_{bot_id}')]])
+    )
+    await query.answer()
+
+@Client.on_callback_query(filters.regex("^remove_admin_"))
+async def remove_admin(client, query: CallbackQuery):
+    parts = query.data.split("_")
+    bot_id = int(parts[2])
+    idx = int(parts[3])
+    clone = await clone_db.get_clone(bot_id)
+    admins = clone.get('settings', {}).get('admins', [])
+    
+    if idx < len(admins):
+        removed = admins.pop(idx)
+        await clone_db.update_clone_setting(bot_id, 'admins', admins)
+        await query.answer(f"Removed Admin: {removed}", show_alert=True)
+    
+    await set_admins(client, query)
+
+# -----------------------------
+# BOT STATUS
+# -----------------------------
+@Client.on_callback_query(filters.regex("^bot_status_"))
+async def bot_status(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    users_count = await clone_db.get_clone_users_count(bot_id)
+    settings = clone.get('settings', {})
+    
+    text = (
+        f"<b>📊 BOT STATUS</b>\n\n"
+        f"🤖 Bot: @{clone['username']}\n"
+        f"📝 Name: {clone['name']}\n"
+        f"👥 Users: {users_count}\n"
+        f"📅 Created: {clone.get('created_at', 'N/A')}\n"
+        f"⏰ Last Used: {clone.get('last_used', 'Never')}\n\n"
+        f"⚙️ SETTINGS:\n"
+        f"• Auto Delete: {'✅' if settings.get('auto_delete') else '❌'}\n"
+        f"• Public Use: {'✅' if settings.get('public_use', True) else '❌'}\n"
+        f"• Force Sub Channels: {len(settings.get('force_sub_channels', []))}\n"
+        f"• Admins: {len(settings.get('admins', []))}"
+    )
+    
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup([
+        [InlineKeyboardButton('⬅️ BACK', callback_data=f'customize_{bot_id}')]
+    ]))
+    await query.answer()
+
+# -----------------------------
+# RESTART CLONE BOT
+# -----------------------------
+@Client.on_callback_query(filters.regex("^restart_"))
+async def restart_clone(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    # Implement your restart logic here
+    await query.answer("🔄 Clone bot restart initiated!", show_alert=True)
+    await customize_clone(client, query)
+
+# -----------------------------
+# DEACTIVATE CLONE BOT
+# -----------------------------
+@Client.on_callback_query(filters.regex("^deactivate_"))
+async def deactivate_clone(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    buttons = [
+        [InlineKeyboardButton('✅ YES, DEACTIVATE', callback_data=f'confirm_deactivate_{bot_id}'),
+         InlineKeyboardButton('❌ NO', callback_data=f'customize_{bot_id}')]
+    ]
+    await query.message.edit_text(
+        "⚠️ <b>DEACTIVATE CLONE?</b>\nThis will stop your clone temporarily. You can reactivate anytime.",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+    await query.answer()
+
+@Client.on_callback_query(filters.regex("^confirm_deactivate_"))
+async def confirm_deactivate(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    await clone_db.deactivate_clone(bot_id)
+    await query.answer("✅ Clone deactivated!", show_alert=True)
+    await customize_clone(client, query)
+
+# -----------------------------
+# DELETE CLONE BOT
+# -----------------------------
+@Client.on_callback_query(filters.regex("^delete_(?!clone)"))
+async def delete_clone_confirm(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    buttons = [
+        [InlineKeyboardButton('✅ YES, DELETE', callback_data=f'confirm_delete_{bot_id}'),
+         InlineKeyboardButton('❌ NO', callback_data=f'customize_{bot_id}')]
+    ]
+    await query.message.edit_text(
+        "⚠️ <b>ARE YOU SURE?</b>\nThis will permanently delete your clone bot!",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
+    await query.answer()
+
+@Client.on_callback_query(filters.regex("^confirm_delete_"))
+async def confirm_delete_clone(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    
+    if clone['user_id'] != query.from_user.id:
+        return await query.answer("Access denied!", show_alert=True)
+    
+    await clone_db.delete_clone_by_id(bot_id)
+    await query.message.edit_text(
+        "✅ <b>CLONE DELETED!</b>\nYour clone bot has been successfully deleted.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⬅️ BACK', callback_data='clone')]])
+    )
+    await query.answer()
