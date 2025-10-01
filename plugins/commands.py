@@ -57,7 +57,7 @@ async def start(client, message):
                 InlineKeyboardButton('👤 ᴜsᴇʀs', callback_data='stats'),
                 InlineKeyboardButton('📢 ʙʀᴏᴀᴅᴄᴀsᴛ', callback_data='broadcast')
             ],
-            [InlineKeyboardButton('🤖 ᴍᴀɴᴀɢᴇ ᴄʟᴏɴᴇs', callback_data='manage_clones')],
+            [InlineKeyboardButton('🤖 ᴍᴀɴᴀɢᴇ ᴄʟᴏɴᴇs', callback_data='clone')],
             [InlineKeyboardButton('⚙️ sᴇᴛᴛɪɴɢs', callback_data='settings')]
         ]
         await message.reply_photo(
