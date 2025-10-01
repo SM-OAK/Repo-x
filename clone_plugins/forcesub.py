@@ -2,22 +2,30 @@
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from pyrogram.errors import UserNotParticipant
-from config import FORCE_SUB_CHANNEL
+from database.clone_db import clone_db
 
 # ───────────────────────────────
 # 📌 FORCE SUBSCRIBE CHECK
 # ───────────────────────────────
 async def check_force_sub(client, user_id):
-    """Check if user joined the force-sub channel"""
+    """Check if user joined the clone's force-sub channel"""
+    # Get clone bot ID from current client
+    bot_id = client.me.id  
+    clone = await clone_db.get_clone(bot_id)
+    
+    force_channel = clone.get("force_sub_channel")  # stored in DB
+    if not force_channel:
+        return True  # No force-sub set → allow
+
     try:
-        member = await client.get_chat_member(FORCE_SUB_CHANNEL, user_id)
+        member = await client.get_chat_member(force_channel, user_id)
         if member.status in ["member", "administrator", "creator"]:
             return True
     except UserNotParticipant:
         return False
     except Exception as e:
-        print(f"ForceSub Error: {e}")
-        return True  # Fallback → don’t block
+        print(f"ForceSub Error ({bot_id}): {e}")
+        return True  # fallback: don’t block
     return False
 
 
@@ -27,13 +35,18 @@ async def check_force_sub(client, user_id):
 @Client.on_message(filters.command("start"))
 async def start_handler(client, message):
     user_id = message.from_user.id
+    bot_id = client.me.id
+    clone = await clone_db.get_clone(bot_id)
 
-    # Check force-subscribe
     is_joined = await check_force_sub(client, user_id)
     if not is_joined:
-        invite_link = (await client.get_chat(FORCE_SUB_CHANNEL)).invite_link
+        try:
+            invite_link = (await client.get_chat(clone["force_sub_channel"])).invite_link
+        except Exception:
+            invite_link = f"https://t.me/{clone['force_sub_channel'].strip('@')}"
+
         return await message.reply(
-            "🚨 <b>You must join our channel to use the bot!</b>",
+            f"🚨 <b>You must join our channel to use {clone['name']}!</b>",
             reply_markup=InlineKeyboardMarkup(
                 [
                     [InlineKeyboardButton("📢 Join Channel", url=invite_link)],
@@ -43,7 +56,7 @@ async def start_handler(client, message):
         )
 
     # If passed → normal start message
-    await message.reply("✅ Welcome! You have access to the bot.")
+    await message.reply(f"✅ Welcome! You have access to <b>{clone['name']}</b>.")
 
 
 # ───────────────────────────────
@@ -52,9 +65,11 @@ async def start_handler(client, message):
 @Client.on_callback_query(filters.regex("^refresh_fsub$"))
 async def refresh_fsub(client, query):
     user_id = query.from_user.id
-    is_joined = await check_force_sub(client, user_id)
+    bot_id = client.me.id
+    clone = await clone_db.get_clone(bot_id)
 
+    is_joined = await check_force_sub(client, user_id)
     if is_joined:
-        await query.message.edit_text("✅ Access granted! You can now use the bot.")
+        await query.message.edit_text(f"✅ Access granted! You can now use <b>{clone['name']}</b>.")
     else:
         await query.answer("🚨 You haven’t joined yet!", show_alert=True)
