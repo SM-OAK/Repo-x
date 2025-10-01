@@ -13,16 +13,17 @@ class CloneDatabase:
         clone_data = {
             'bot_id': bot_id,
             'user_id': user_id,
-            'bot_token': bot_token,  # fixed key name
+            'bot_token': bot_token,
             'username': username,
             'name': name,
             'is_active': True,
             'created_at': datetime.now(),
             'settings': {
                 'start_message': None,
+                'start_photo': None,
                 'force_sub_channel': None,
                 'auto_delete': False,
-                'auto_delete_time': 1800,
+                'auto_delete_time': 300,  # 5 minutes default
                 'no_forward': False,
                 'moderators': [],
                 'mode': 'public'
@@ -57,6 +58,15 @@ class CloneDatabase:
         )
         return True
     
+    async def update_clone_settings_bulk(self, bot_id, settings_dict):
+        """Update multiple settings at once"""
+        update_dict = {f'settings.{k}': v for k, v in settings_dict.items()}
+        await self.col.update_one(
+            {'bot_id': bot_id},
+            {'$set': update_dict}
+        )
+        return True
+    
     async def delete_clone(self, bot_token):
         """Delete clone by token"""
         await self.col.delete_one({'bot_token': bot_token})
@@ -79,6 +89,22 @@ class CloneDatabase:
         """Get user count for specific clone"""
         # Placeholder for future per-clone user tracking
         return 0
+    
+    async def add_moderator(self, bot_id, moderator_id):
+        """Add moderator to clone"""
+        await self.col.update_one(
+            {'bot_id': bot_id},
+            {'$addToSet': {'settings.moderators': moderator_id}}
+        )
+        return True
+    
+    async def remove_moderator(self, bot_id, moderator_id):
+        """Remove moderator from clone"""
+        await self.col.update_one(
+            {'bot_id': bot_id},
+            {'$pull': {'settings.moderators': moderator_id}}
+        )
+        return True
 
 # Create instance
 clone_db = CloneDatabase(DB_URI)
