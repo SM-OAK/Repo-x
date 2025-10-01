@@ -454,7 +454,7 @@ async def bot_status(client, query: CallbackQuery):
 # -----------------------------
 # RESTART CLONE BOT
 # -----------------------------
-@@Client.on_callback_query(filters.regex("^restart_"))
+@Client.on_callback_query(filters.regex("^restart_"))
 async def restart_clone(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[1])
     clone = await clone_db.get_clone(bot_id)
