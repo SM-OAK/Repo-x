@@ -5,7 +5,7 @@ from database.clone_db import clone_db
 
 # Hum user_states ko appearance.py se import kar rahe hain.
 # Baad mein hum ise ek central file mein rakhenge.
-from .appearance import user_states
+from .appearance import input_handler.py
 
 # ==================== ADMINS ====================
 @Client.on_callback_query(filters.regex("^admins_"))
