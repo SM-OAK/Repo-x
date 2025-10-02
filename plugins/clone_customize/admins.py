@@ -59,4 +59,3 @@ async def remove_admin(client, query: CallbackQuery):
         await query.answer(f"✅ Removed: {removed}", show_alert=True)
     
     await admins_menu(client, query)
-￼Enter
