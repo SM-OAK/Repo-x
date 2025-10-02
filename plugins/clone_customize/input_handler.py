@@ -1,134 +1,87 @@
 # plugins/clone_customize/input_handler.py
-from pyrogram import Client, filters, types
+from pyrogram import Client, filters
+from pyrogram.types import Message
+from pyrogram.enums import ChatMemberStatus
+from pyrogram.errors import UserNotParticipant
 from database.clone_db import clone_db
-import logging
 
-logger = logging.getLogger(__name__)
-
-# Yeh user_states dictionary ab yahan centrally manage hogi.
+# This dictionary stores what action we are expecting from a user.
+# It should be imported by other files that need to set a state.
 user_states = {}
 
-# ==================== USER INPUT HANDLER ====================
-@Client.on_message(filters.private & filters.text, group=2)
-async def handle_setting_input(client, message: types.Message):
+@Client.on_message(filters.private & ~filters.command(["start", "cancel"]) & filters.text)
+async def handle_user_input(client: Client, message: Message):
     user_id = message.from_user.id
-    
     if user_id not in user_states:
-        return
+        return  # Not waiting for any input from this user.
+
+    state = user_states.pop(user_id)  # Get state and remove it to prevent re-triggering
+    action = state.get('action')
+    bot_id = state.get('bot_id')
     
-    state = user_states[user_id]
-    action = state['action']
-    bot_id = state['bot_id']
-    
-    if message.text == '/cancel':
-        del user_states[user_id]
-        return await message.reply("❌ Cancelled!", reply_markup=types.InlineKeyboardMarkup([[
-            types.InlineKeyboardButton('« Back to Main Menu', callback_data=f'customize_{bot_id}')
-        ]]))
-    
-    try:
-        action_map = {
-            'start_text': ('start_message', f'start_text_{bot_id}'),
-            'start_button': ('start_button', f'start_button_{bot_id}'),
-            'file_caption': ('file_caption', f'file_caption_{bot_id}'),
-            'shortlink_api': ('shortlink_api', f'verification_{bot_id}'),
-            'shortlink_url': ('shortlink_url', f'verification_{bot_id}'),
-            'tutorial_link': ('tutorial_link', f'verification_{bot_id}'),
-            'mongo_db': ('mongo_db', f'mongo_db_{bot_id}'),
-            'log_channel': ('log_channel', f'log_channel_{bot_id}'),
-            'db_channel': ('db_channel', f'db_channel_{bot_id}'),
-        }
-
-        if action in action_map:
-            setting_key, back_callback = action_map[action]
-            await clone_db.update_clone_setting(bot_id, setting_key, message.text)
-            del user_states[user_id]
-            await message.reply(f"✅ Setting for `{action}` updated!", reply_markup=types.InlineKeyboardMarkup([[
-                types.InlineKeyboardButton('« Back', callback_data=back_callback)
-            ]]))
-
-        elif action == 'start_photo':
-            if message.text == '/remove':
-                await clone_db.update_clone_setting(bot_id, 'start_photo', None)
-                del user_states[user_id]
-                return await message.reply("✅ Removed!", reply_markup=types.InlineKeyboardMarkup([[
-                    types.InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
-                ]]))
-            
-            if message.text.startswith('http'):
-                await clone_db.update_clone_setting(bot_id, 'start_photo', message.text)
-                del user_states[user_id]
-                await message.reply("✅ Photo updated!", reply_markup=types.InlineKeyboardMarkup([[
-                    types.InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
-                ]]))
-            else:
-                await message.reply("❌ Invalid URL!")
-
-        elif action == 'add_fsub':
-            clone = await clone_db.get_clone(bot_id)
-            channels = clone.get('settings', {}).get('force_sub_channels', [])
-            if len(channels) >= 6: return await message.reply("❌ Max 6 channels!")
-            channel = message.text.strip()
-            if channel not in channels:
-                channels.append(channel)
-                await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
-                del user_states[user_id]
-                await message.reply(f"✅ Added: {channel}", reply_markup=types.InlineKeyboardMarkup([[
-                    types.InlineKeyboardButton('« Back', callback_data=f'fsub_manage_{bot_id}')
-                ]]))
-            else:
-                await message.reply("❌ Already exists!")
-
-        elif action == 'autodel_time':
-            time_sec = int(message.text)
-            if time_sec < 20: return await message.reply("❌ Min 20 seconds!")
-            await clone_db.update_clone_setting(bot_id, 'auto_delete_time', time_sec)
-            del user_states[user_id]
-            await message.reply(f"✅ Time set to {time_sec}s!", reply_markup=types.InlineKeyboardMarkup([[
-                types.InlineKeyboardButton('« Back', callback_data=f'auto_delete_{bot_id}')
-            ]]))
-
-        elif action == 'add_admin':
-            admin_id = int(message.text)
-            clone = await clone_db.get_clone(bot_id)
-            admins = clone.get('settings', {}).get('admins', [])
-            if admin_id not in admins:
-                admins.append(admin_id)
-                await clone_db.update_clone_setting(bot_id, 'admins', admins)
-                del user_states[user_id]
-                await message.reply(f"✅ Admin added: {admin_id}", reply_markup=types.InlineKeyboardMarkup([[
-                    types.InlineKeyboardButton('« Back', callback_data=f'admins_{bot_id}')
-                ]]))
-            else:
-                await message.reply("❌ Already admin!")
+    # --- Handler for adding Force Subscribe channel ---
+    if action == 'add_fsub_channel':
+        channel_input = message.text.strip()
         
-        elif action == 'file_limit':
-            limit = int(message.text)
-            await clone_db.update_clone_setting(bot_id, 'file_size_limit', limit)
-            del user_states[user_id]
-            await message.reply(f"✅ Limit set to {limit}MB!", reply_markup=types.InlineKeyboardMarkup([[
-                types.InlineKeyboardButton('« Back', callback_data=f'files_{bot_id}')
-            ]]))
+        try:
+            # Try to convert to int for ID check, otherwise treat as username
+            channel_identifier = int(channel_input) if channel_input.startswith('-100') else channel_input
+        except ValueError:
+            await message.reply_text("❌ **Invalid ID Format**\nChannel IDs must be numbers starting with -100.")
+            return
 
-    except ValueError:
-        await message.reply("❌ Invalid input!")
-    except Exception as e:
-        logger.error(f"Error handling input: {e}")
-        await message.reply(f"❌ Error: {str(e)}")
+        try:
+            # Check if the channel is accessible
+            chat = await client.get_chat(channel_identifier)
+            
+            # Check if the bot is an admin in the channel
+            member = await chat.get_member(client.me.id)
+            if member.status not in [ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.OWNER]:
+                 await message.reply_text(f"❌ **Bot is Not Admin**\nI am not an administrator in '{chat.title}'. Please make me an admin and try again.")
+                 return
 
+        except Exception as e:
+            await message.reply_text(f"❌ **Error Accessing Channel**\nCould not access `{channel_input}`.\n\n"
+                                     f"Please ensure the username/ID is correct and that I am a member of the channel.\n`Error: {e}`")
+            return
 
-@Client.on_message(filters.private & filters.photo, group=2)
-async def handle_photo_input(client, message: types.Message):
-    user_id = message.from_user.id
-    if user_id not in user_states: return
-    state = user_states[user_id]
-    if state['action'] != 'start_photo': return
+        clone = await clone_db.get_clone(bot_id)
+        channels = clone.get('settings', {}).get('force_sub_channels', [])
+        
+        if len(channels) >= 6:
+            await message.reply_text("❌ **Limit Reached**\nYou have already added the maximum of 6 channels.")
+            return
+        
+        if chat.id in channels:
+            await message.reply_text(f"⚠️ **Already Added**\nThe channel '{chat.title}' is already in your list.")
+            return
+
+        channels.append(chat.id)  # Store the integer ID for reliability
+        await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
+        await message.reply_text(f"✅ **Channel Added!**\nSuccessfully added '{chat.title}'.\n\nYou can go back to the menu to see the change or add another channel.")
+
+    # --- Handler for setting auto-delete time ---
+    elif action == 'autodel_time':
+        try:
+            minutes = int(message.text.strip())
+            if not (1 <= minutes <= 100): raise ValueError
+            seconds = minutes * 60
+            await clone_db.update_clone_setting(bot_id, 'auto_delete_time', seconds)
+            await message.reply_text(f"✅ **Time Set**\nAuto-delete time has been set to {minutes} minutes.")
+        except ValueError:
+            await message.reply_text("❌ **Invalid Input**\nPlease send a number between 1 and 100.")
     
-    bot_id = state['bot_id']
-    photo_id = message.photo.file_id
-    
-    await clone_db.update_clone_setting(bot_id, 'start_photo', photo_id)
-    del user_states[user_id]
-    await message.reply("✅ Photo updated!", reply_markup=types.InlineKeyboardMarkup([[
-        types.InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
-    ]]))
+    # --- Handlers for verification settings ---
+    elif action == 'shortlink_api':
+        await clone_db.update_clone_setting(bot_id, 'shortlink_api', message.text.strip())
+        await message.reply_text("✅ **API Key Set**")
+        
+    elif action == 'shortlink_url':
+        url = message.text.strip()
+        if not url.startswith("http"): url = "https://" + url
+        await clone_db.update_clone_setting(bot_id, 'shortlink_url', url)
+        await message.reply_text("✅ **URL Set**")
+        
+    elif action == 'tutorial_link':
+        await clone_db.update_clone_setting(bot_id, 'tutorial_link', message.text.strip())
+        await message.reply_text("✅ **Tutorial Link Set**")
