@@ -49,4 +49,3 @@ async def customize_clone(client, query: CallbackQuery):
     
     text = f"<b>{status} @{clone['username']}</b>\n<i>Select category:</i>"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
-
