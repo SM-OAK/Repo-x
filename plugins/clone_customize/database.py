@@ -149,5 +149,3 @@ async def remove_db_channel(client, query: CallbackQuery):
     await clone_db.update_clone_setting(bot_id, 'db_channel', None)
     await query.answer("✅ Removed!", show_alert=True)
     await db_channel_menu(client, query)
-
-￼Enter
