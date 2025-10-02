@@ -5,7 +5,8 @@ from database.clone_db import clone_db
 
 # Hum user_states ko appearance.py se import kar rahe hain taaki state share ho sake.
 # Baad mein hum ise ek central file mein rakhenge.
-from .appearance import input_handler.py
+# Yeh sahi line hai
+from .input_handler import user_states
 
 # ==================== SECURITY ====================
 @Client.on_callback_query(filters.regex("^security_"))
