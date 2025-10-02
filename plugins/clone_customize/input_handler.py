@@ -22,13 +22,11 @@ async def handle_setting_input(client, message: types.Message):
     
     if message.text == '/cancel':
         del user_states[user_id]
-        # We don't know the exact back button, so we send a generic one.
         return await message.reply("❌ Cancelled!", reply_markup=types.InlineKeyboardMarkup([[
             types.InlineKeyboardButton('« Back to Main Menu', callback_data=f'customize_{bot_id}')
         ]]))
     
     try:
-        # Action mapping to avoid long if/elif chain
         action_map = {
             'start_text': ('start_message', f'start_text_{bot_id}'),
             'start_button': ('start_button', f'start_button_{bot_id}'),
@@ -41,7 +39,6 @@ async def handle_setting_input(client, message: types.Message):
             'db_channel': ('db_channel', f'db_channel_{bot_id}'),
         }
 
-        # Generic handlers
         if action in action_map:
             setting_key, back_callback = action_map[action]
             await clone_db.update_clone_setting(bot_id, setting_key, message.text)
@@ -50,8 +47,7 @@ async def handle_setting_input(client, message: types.Message):
                 types.InlineKeyboardButton('« Back', callback_data=back_callback)
             ]]))
 
-        # Specific handlers with more logic
-        elif action == 'start_photo': # URL input for photo
+        elif action == 'start_photo':
             if message.text == '/remove':
                 await clone_db.update_clone_setting(bot_id, 'start_photo', None)
                 del user_states[user_id]
@@ -71,9 +67,7 @@ async def handle_setting_input(client, message: types.Message):
         elif action == 'add_fsub':
             clone = await clone_db.get_clone(bot_id)
             channels = clone.get('settings', {}).get('force_sub_channels', [])
-            
             if len(channels) >= 6: return await message.reply("❌ Max 6 channels!")
-            
             channel = message.text.strip()
             if channel not in channels:
                 channels.append(channel)
@@ -88,7 +82,6 @@ async def handle_setting_input(client, message: types.Message):
         elif action == 'autodel_time':
             time_sec = int(message.text)
             if time_sec < 20: return await message.reply("❌ Min 20 seconds!")
-            
             await clone_db.update_clone_setting(bot_id, 'auto_delete_time', time_sec)
             del user_states[user_id]
             await message.reply(f"✅ Time set to {time_sec}s!", reply_markup=types.InlineKeyboardMarkup([[
@@ -99,7 +92,6 @@ async def handle_setting_input(client, message: types.Message):
             admin_id = int(message.text)
             clone = await clone_db.get_clone(bot_id)
             admins = clone.get('settings', {}).get('admins', [])
-            
             if admin_id not in admins:
                 admins.append(admin_id)
                 await clone_db.update_clone_setting(bot_id, 'admins', admins)
@@ -125,17 +117,12 @@ async def handle_setting_input(client, message: types.Message):
         await message.reply(f"❌ Error: {str(e)}")
 
 
-# Handle Photo Input
 @Client.on_message(filters.private & filters.photo, group=2)
 async def handle_photo_input(client, message: types.Message):
     user_id = message.from_user.id
-    
-    if user_id not in user_states:
-        return
-    
+    if user_id not in user_states: return
     state = user_states[user_id]
-    if state['action'] != 'start_photo':
-        return
+    if state['action'] != 'start_photo': return
     
     bot_id = state['bot_id']
     photo_id = message.photo.file_id
