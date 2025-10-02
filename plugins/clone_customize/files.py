@@ -99,4 +99,3 @@ async def toggle_file_type(client, query: CallbackQuery):
     
     await clone_db.update_clone_setting(bot_id, 'allowed_types', allowed)
     await file_types_menu(client, query)
-￼Enter
