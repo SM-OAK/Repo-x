@@ -54,19 +54,39 @@ async def fsub_manage(client, query: CallbackQuery):
     text = f"<b>🔒 Force Subscribe</b>\n<b>Channels:</b> {len(channels)}/6"
     await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
-@Client.on_callback_query(filters.regex("^add_fsub_"))
-async def add_fsub(client, query: CallbackQuery):
+# Yeh naya aur improved fsub_manage function hai
+@Client.on_callback_query(filters.regex("^fsub_manage_"))
+async def fsub_manage(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[2])
-    user_states[query.from_user.id] = {'action': 'add_fsub', 'bot_id': bot_id}
+    clone = await clone_db.get_clone(bot_id)
+    settings = clone.get('settings', {})
+    channels = settings.get('force_sub_channels', [])
     
-    await query.message.edit_text(
-        "<b>Send channel:</b>\n\n"
-        "Format: <code>@username</code> or <code>-100xxx</code>\n\n"
-        "/cancel to abort",
-        reply_markup=InlineKeyboardMarkup([[
-            InlineKeyboardButton('« Cancel', callback_data=f'fsub_manage_{bot_id}')
-        ]])
-    )
+    buttons = []
+    
+    # Har channel ke liye uski details nikalenge
+    for idx, ch_identifier in enumerate(channels):
+        channel_name = f"⚠️ Invalid: {ch_identifier}" # Default text agar error aaye
+        try:
+            # client.get_chat() se channel ka naam nikalenge
+            chat = await client.get_chat(ch_identifier)
+            channel_name = chat.title # Channel ka asli naam
+        except Exception as e:
+            print(f"Could not get chat for {ch_identifier}: {e}")
+
+        # Ab button mein ID ki jagah channel ka asli naam dikhega
+        buttons.append([
+            InlineKeyboardButton(f'📢 {channel_name}', callback_data=f'info_{ch_identifier}'), # Button par ab naam aayega
+            InlineKeyboardButton('❌', callback_data=f'remove_fsub_{bot_id}_{idx}')
+        ])
+    
+    if len(channels) < 6:
+        buttons.append([InlineKeyboardButton('➕ Add Channel', callback_data=f'add_fsub_{bot_id}')])
+    
+    buttons.append([InlineKeyboardButton('« Back', callback_data=f'security_{bot_id}')])
+    
+    text = f"<b>🔒 Force Subscribe</b>\n<b>Channels:</b> {len(channels)}/6\n\n<i>Yahan aapke jode gaye channels dikhenge.</i>"
+    await query.message.edit_text(text, reply_markup=InlineKeyboardMarkup(buttons))
 
 @Client.on_callback_query(filters.regex("^remove_fsub_"))
 async def remove_fsub(client, query: CallbackQuery):
