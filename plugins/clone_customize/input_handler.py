@@ -4,6 +4,10 @@ from pyrogram.errors import PeerIdInvalid, ChannelInvalid, UsernameInvalid
 from database.clone_db import clone_db
 import logging
 
+# This is the helper function from your security.py.
+# We need it here to check permissions with the clone bot's token.
+from .security import verify_clone_bot_admin
+
 logger = logging.getLogger(__name__)
 
 # User states dictionary
@@ -76,6 +80,8 @@ async def handle_setting_input(client, message: types.Message):
                         types.InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
                     ]])
                 )
+            # BUG FIX: Clear user state on error
+            del user_states[user_id]
             return await message.reply("❌ Invalid URL! Send a valid http(s) link.")
 
         # Force Subscribe channels
@@ -84,6 +90,8 @@ async def handle_setting_input(client, message: types.Message):
             channels = clone.get('settings', {}).get('force_sub_channels', [])
 
             if len(channels) >= 6:
+                # BUG FIX: Clear user state on error
+                del user_states[user_id]
                 return await message.reply(
                     "❌ Maximum 6 channels allowed!",
                     reply_markup=types.InlineKeyboardMarkup([[
@@ -93,46 +101,43 @@ async def handle_setting_input(client, message: types.Message):
 
             channel_input = message.text.strip()
             try:
-                if channel_input.startswith('@'):
-                    chat = await client.get_chat(channel_input)
-                elif channel_input.startswith('-100') or channel_input.lstrip('-').isdigit():
-                    chat = await client.get_chat(int(channel_input))
-                else:
-                    return await message.reply(
-                        "❌ Invalid format!\n\n"
-                        "Send either:\n"
-                        "• Channel username: <code>@channelname</code>\n"
-                        "• Channel ID: <code>-100123456789</code>",
-                        reply_markup=types.InlineKeyboardMarkup([[
-                            types.InlineKeyboardButton('« Back', callback_data=f'fsub_manage_{bot_id}')
-                        ]])
-                    )
+                # Get chat object using the main bot
+                chat = await client.get_chat(channel_input)
 
-                # Already added?
-                if any(str(chat.id) == str(c.get("id")) for c in channels):
+                # BUG FIX: Check against a simple list of IDs
+                if chat.id in channels:
+                    del user_states[user_id]
                     return await message.reply(
                         "❌ This channel is already added!",
                         reply_markup=types.InlineKeyboardMarkup([[
                             types.InlineKeyboardButton('« Back', callback_data=f'fsub_manage_{bot_id}')
                         ]])
                     )
+                
+                # BUG FIX: Verify using the CLONE BOT's token, not the main bot's
+                clone_bot_token = clone.get('bot_token')
+                if not clone_bot_token:
+                    del user_states[user_id]
+                    return await message.reply("❌ Clone Bot Token not found. Cannot verify permissions.")
 
-                # Verify bot is admin
-                bot_member = await client.get_chat_member(chat.id, (await client.get_me()).id)
-                if bot_member.status not in ['administrator', 'creator']:
+                is_admin = await verify_clone_bot_admin(
+                    clone_bot_token,
+                    chat.id,
+                    client.api_id,
+                    client.api_hash
+                )
+
+                if not is_admin:
+                    del user_states[user_id]
                     return await message.reply(
-                        f"❌ I'm not an admin in <b>{chat.title}</b>!\nPlease add me as administrator first.",
+                        f"❌ The **clone bot** is not an admin in <b>{chat.title}</b>!\n\nPlease add the clone bot as an administrator with 'Add Members' permission first.",
                         reply_markup=types.InlineKeyboardMarkup([[
                             types.InlineKeyboardButton('« Back', callback_data=f'fsub_manage_{bot_id}')
                         ]])
                     )
 
-                # Save with metadata
-                channels.append({
-                    "id": str(chat.id),
-                    "title": chat.title,
-                    "username": f"@{chat.username}" if chat.username else None
-                })
+                # BUG FIX: Save only the channel ID for consistency
+                channels.append(chat.id)
                 await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
                 del user_states[user_id]
 
@@ -144,19 +149,28 @@ async def handle_setting_input(client, message: types.Message):
                 )
 
             except (PeerIdInvalid, ChannelInvalid, UsernameInvalid):
-                return await message.reply("❌ Invalid channel! Please check format and permissions.")
+                # BUG FIX: Clear user state on error
+                del user_states[user_id]
+                return await message.reply(
+                    "❌ Invalid channel!! Please check the username/ID and make sure the **main bot** (Repo Bot) has been added to the channel (it doesn't need admin rights, it just needs to be a member to see the channel's info).",
+                    reply_markup=types.InlineKeyboardMarkup([[
+                        types.InlineKeyboardButton('« Back', callback_data=f'fsub_manage_{bot_id}')
+                    ]])
+                )
             except Exception as e:
+                # BUG FIX: Clear user state on error
+                del user_states[user_id]
                 logger.error(f"ForceSub add error: {e}", exc_info=True)
-                return await message.reply("❌ Unexpected error while adding channel. Check logs.")
+                return await message.reply("❌ An unexpected error occurred while adding the channel.")
 
-        # Auto Delete Time (1–720 minutes)
+        # Auto Delete Time
         elif action == 'autodel_time':
             try:
                 time_minutes = int(message.text.strip())
-                if time_minutes < 1:
-                    return await message.reply("❌ Minimum 1 minute!")
-                if time_minutes > 720:
-                    return await message.reply("❌ Maximum 720 minutes (12 hours)!")
+                if not 1 <= time_minutes <= 100:
+                    del user_states[user_id]
+                    return await message.reply("❌ Time must be between 1 and 100 minutes!")
+                
                 await clone_db.update_clone_setting(bot_id, 'auto_delete_time', time_minutes * 60)
                 del user_states[user_id]
                 return await message.reply(
@@ -166,59 +180,14 @@ async def handle_setting_input(client, message: types.Message):
                     ]])
                 )
             except ValueError:
-                return await message.reply("❌ Please send a valid number!")
-
-        # Add Admin (ID or @username)
-        elif action == 'add_admin':
-            try:
-                if message.text.strip().startswith("@"):
-                    user = await client.get_users(message.text.strip())
-                    admin_id = user.id
-                else:
-                    admin_id = int(message.text.strip())
-
-                clone = await clone_db.get_clone(bot_id)
-                admins = clone.get('settings', {}).get('admins', [])
-
-                if admin_id in admins:
-                    return await message.reply("❌ Already an admin!")
-
-                admins.append(admin_id)
-                await clone_db.update_clone_setting(bot_id, 'admins', admins)
                 del user_states[user_id]
-
-                return await message.reply(
-                    f"✅ Admin added successfully!\n<b>User ID:</b> <code>{admin_id}</code>",
-                    reply_markup=types.InlineKeyboardMarkup([[
-                        types.InlineKeyboardButton('« Back', callback_data=f'admins_{bot_id}')
-                    ]])
-                )
-            except Exception as e:
-                logger.error(f"Add admin error: {e}", exc_info=True)
-                return await message.reply("❌ Failed to add admin! Make sure the ID/username is valid.")
-
-        # File Size Limit (1–4096 MB)
-        elif action == 'file_limit':
-            try:
-                limit = int(message.text.strip())
-                if limit < 1:
-                    return await message.reply("❌ Minimum 1MB!")
-                if limit > 4096:
-                    return await message.reply("❌ Maximum 4096MB (4GB)!")
-                await clone_db.update_clone_setting(bot_id, 'file_size_limit', limit)
-                del user_states[user_id]
-                return await message.reply(
-                    f"✅ File size limit set to {limit}MB!",
-                    reply_markup=types.InlineKeyboardMarkup([[
-                        types.InlineKeyboardButton('« Back', callback_data=f'files_{bot_id}')
-                    ]])
-                )
-            except ValueError:
                 return await message.reply("❌ Please send a valid number!")
 
     except Exception as e:
         logger.error(f"Input handler error: {e}", exc_info=True)
-        await message.reply("❌ Unexpected error! Please try again later.")
+        if user_id in user_states:
+            del user_states[user_id]
+        await message.reply("❌ A critical error occurred. The operation has been cancelled.")
 
 
 # Handle Photo Input
