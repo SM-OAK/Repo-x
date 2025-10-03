@@ -346,7 +346,220 @@ async def verify_all_fsub(client, query: CallbackQuery):
         )
         
         if is_admin:
-            verified.append(f"✅ {info['title']}")
+# ==================== FORCE SUBSCRIBE SECTION ====================
+@Client.on_callback_query(filters.regex("^fsub_manage_"))
+async def fsub_manage(client: Client, query: CallbackQuery):
+    try:
+        bot_id = int(query.data.split("_")[2])
+    except (IndexError, ValueError):
+        return await query.answer("Invalid request.", show_alert=True)
+
+    clone = await clone_db.get_clone(bot_id)
+    if not clone:
+        return await query.answer("Bot not found.", show_alert=True)
+        
+    channels = clone.get('settings', {}).get('force_sub_channels', [])
+    
+    buttons = []
+    
+    # List all channels with better formatting
+    if channels:
+        for idx, channel_data in enumerate(channels):
+            # Handle both old format (plain ID) and new format (dict)
+            if isinstance(channel_data, dict):
+                channel_id = channel_data.get('id')
+                display_name = channel_data.get('title', 'Unknown Channel')
+            else:
+                channel_id = channel_data
+                display_name = f"Channel {idx + 1}"
+            
+            buttons.append([
+                InlineKeyboardButton(
+                    f"{idx + 1}. {display_name[:30]}",
+                    callback_data=f'info_fsub_{idx}_{bot_id}'
+                ),
+                InlineKeyboardButton('🗑️', callback_data=f'remove_fsub_{bot_id}_{idx}')
+            ])
+    
+    # Add/Max channels button
+    if len(channels) < 6:
+        buttons.append([
+            InlineKeyboardButton('➕ Add New Channel', callback_data=f'add_fsub_prompt_{bot_id}')
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton('⚠️ Maximum Channels Reached (6/6)', callback_data='noop')
+        ])
+    
+    # Test and manage buttons
+    if channels:
+        buttons.append([
+            InlineKeyboardButton('🧪 Test Channels', callback_data=f'test_fsub_{bot_id}')
+        ])
+        buttons.append([
+            InlineKeyboardButton('🗑️ Clear All', callback_data=f'clear_all_fsub_{bot_id}')
+        ])
+    
+    buttons.append([InlineKeyboardButton('« Back to Security', callback_data=f'security_{bot_id}')])
+    
+    if channels:
+        text = (
+            "📢 <b>Force Subscribe Management</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"<b>Active Channels:</b> {len(channels)}/6\n\n"
+            "<b>⚠️ Important:</b>\n"
+            "• Your clone bot must be admin in all channels\n"
+            "• Bot needs invite users permission\n"
+            "• Click channel to view details\n"
+            "• Click 🗑️ to remove"
+        )
+    else:
+        text = (
+            "📢 <b>Force Subscribe Management</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n\n"
+            "<b>No channels configured</b>\n\n"
+            "Force users to join channels before accessing the bot.\n\n"
+            "Click <b>Add New Channel</b> to get started!"
+        )
+    
+    await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^info_fsub_"))
+async def show_channel_info(client, query: CallbackQuery):
+    try:
+        parts = query.data.split("_")
+        idx, bot_id = int(parts[2]), int(parts[3])
+    except (IndexError, ValueError):
+        return await query.answer("Invalid request.", show_alert=True)
+    
+    clone = await clone_db.get_clone(bot_id)
+    channels = clone.get('settings', {}).get('force_sub_channels', [])
+    
+    if not (0 <= idx < len(channels)):
+        return await query.answer("❌ Channel not found.", show_alert=True)
+    
+    channel_data = channels[idx]
+    
+    # Handle both formats
+    if isinstance(channel_data, dict):
+        channel_id = channel_data.get('id')
+        title = channel_data.get('title', 'Unknown')
+        username = channel_data.get('username')
+    else:
+        channel_id = channel_data
+        title = 'Channel'
+        username = None
+    
+    info_text = (
+        f"📢 <b>Channel Details</b>\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"<b>Name:</b> {title}\n"
+        f"<b>Username:</b> {username or 'Private'}\n"
+        f"<b>ID:</b> <code>{channel_id}</code>"
+    )
+    await query.answer(info_text, show_alert=True)
+
+@Client.on_callback_query(filters.regex("^test_fsub_"))
+async def test_force_sub(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[2])
+    clone = await clone_db.get_clone(bot_id)
+    channels = clone.get('settings', {}).get('force_sub_channels', [])
+    
+    if not channels:
+        return await query.answer("❌ No channels configured.", show_alert=True)
+    
+    not_joined = []
+    
+    for channel_data in channels:
+        # Handle both formats
+        if isinstance(channel_data, dict):
+            channel_id = int(channel_data.get('id'))
+            title = channel_data.get('title', 'Unknown')
+        else:
+            channel_id = int(channel_data)
+            title = f"Channel {channel_id}"
+        
+        try:
+            await client.get_chat_member(channel_id, query.from_user.id)
+        except UserNotParticipant:
+            not_joined.append(f"• {title}")
+        except Exception as e:
+            logger.error(f"Error checking membership for {channel_id}: {e}")
+            not_joined.append(f"• {title} (Error)")
+    
+    if not_joined:
+        result = (
+            "❌ <b>Not joined:</b>\n" + 
+            "\n".join(not_joined)
+        )
+    else:
+        result = "✅ You are subscribed to all channels!"
+    
+    await query.answer(result, show_alert=True)
+
+@Client.on_callback_query(filters.regex("^add_fsub_prompt_"))
+async def add_fsub_prompt(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    user_states[query.from_user.id] = {'action': 'add_fsub_channel', 'bot_id': bot_id}
+    
+    text = (
+        "<b>➕ Add Force Subscribe Channel</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "<b>Send channel information:</b>\n\n"
+        "<b>Username:</b> <code>@channelname</code>\n"
+        "<b>ID:</b> <code>-100123456789</code>\n\n"
+        "⚠️ Your clone bot must be admin!\n\n"
+        "Send /cancel to cancel."
+    )
+    buttons = [[InlineKeyboardButton('❌ Cancel', callback_data=f'fsub_manage_{bot_id}')]]
+    await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^remove_fsub_"))
+async def remove_fsub(client, query: CallbackQuery):
+    parts = query.data.split("_")
+    bot_id, idx_to_remove = int(parts[2]), int(parts[3])
+    clone = await clone_db.get_clone(bot_id)
+    channels = clone.get('settings', {}).get('force_sub_channels', [])
+    
+    if 0 <= idx_to_remove < len(channels):
+        channels.pop(idx_to_remove)
+        await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
+        await query.answer("✅ Channel removed!", show_alert=False)
+    else:
+        await query.answer("❌ Channel not found.", show_alert=True)
+
+    query.data = f"fsub_manage_{bot_id}"
+    await fsub_manage(client, query)
+
+@Client.on_callback_query(filters.regex("^clear_all_fsub_"))
+async def clear_all_fsub(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    
+    buttons = [
+        [
+            InlineKeyboardButton('✅ Yes, Clear', callback_data=f'confirm_clear_fsub_{bot_id}'),
+            InlineKeyboardButton('❌ Cancel', callback_data=f'fsub_manage_{bot_id}')
+        ]
+    ]
+    
+    text = (
+        "⚠️ <b>Confirm Clear All</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n\n"
+        "Remove ALL force subscribe channels?\n\n"
+        "This cannot be undone!"
+    )
+    
+    await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
+
+@Client.on_callback_query(filters.regex("^confirm_clear_fsub_"))
+async def confirm_clear_fsub(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[3])
+    
+    await clone_db.update_clone_setting(bot_id, 'force_sub_channels', [])
+    await query.answer("✅ All channels cleared!", show_alert=True)
+    
+    query.data = f"fsub_manage_{bot_id}"
+    await fsub_manage(client, query)            verified.append(f"✅ {info['title']}")
         else:
             not_admin.append(f"❌ {info['title']}")
     
@@ -371,74 +584,6 @@ async def add_fsub_prompt(client, query: CallbackQuery):
     text = (
         "<b>➕ Add Force Subscribe Channel</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "<b>Send the channel information:</b>\n\n"
-        "<b>Option 1:</b> Channel Username\n"
-        "Example: <code>@channelname</code>\n\n"
-        "<b>Option 2:</b> Channel ID\n"
-        "Example: <code>-100123456789</code>\n\n"
-        "💡 <b>How to get Channel ID:</b>\n"
-        "1. Forward a message from the channel to @userinfobot\n"
-        "2. Copy the channel ID it gives you\n"
-        "3. Send it here\n\n"
-        "⚠️ <b>Requirements:</b>\n"
-        "• Your <b>clone bot</b> must be admin in the channel\n"
-        "• Bot needs <b>'Add Members'</b> permission\n\n"
-        "Send /cancel to cancel."
-    )
-    buttons = [[InlineKeyboardButton('❌ Cancel', callback_data=f'fsub_manage_{bot_id}')]]
-    await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
-
-@Client.on_callback_query(filters.regex("^remove_fsub_"))
-async def remove_fsub(client, query: CallbackQuery):
-    parts = query.data.split("_")
-    bot_id, idx_to_remove = int(parts[2]), int(parts[3])
-    clone = await clone_db.get_clone(bot_id)
-    channels = clone.get('settings', {}).get('force_sub_channels', [])
-    
-    if 0 <= idx_to_remove < len(channels):
-        removed_channel_id = channels.pop(idx_to_remove)
-        await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
-        info = await get_channel_info(client, removed_channel_id)
-        await query.answer(f"✅ Removed: {info['title']}", show_alert=False)
-    else:
-        await query.answer("❌ Channel already removed.", show_alert=True)
-
-    query.data = f"fsub_manage_{bot_id}"
-    await fsub_manage(client, query)
-
-@Client.on_callback_query(filters.regex("^clear_all_fsub_"))
-async def clear_all_fsub(client, query: CallbackQuery):
-    """Clear all force subscribe channels with confirmation."""
-    bot_id = int(query.data.split("_")[3])
-    
-    buttons = [
-        [
-            InlineKeyboardButton('✅ Yes, Clear All', callback_data=f'confirm_clear_fsub_{bot_id}'),
-            InlineKeyboardButton('❌ No, Cancel', callback_data=f'fsub_manage_{bot_id}')
-        ]
-    ]
-    
-    text = (
-        "⚠️ <b>Confirm Clear All Channels</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Are you sure you want to remove <b>ALL</b> force subscribe channels?\n\n"
-        "This action cannot be undone!"
-    )
-    
-    await safe_edit_message(query, text, reply_markup=InlineKeyboardMarkup(buttons))
-
-@Client.on_callback_query(filters.regex("^confirm_clear_fsub_"))
-async def confirm_clear_fsub(client, query: CallbackQuery):
-    """Confirm and clear all channels."""
-    bot_id = int(query.data.split("_")[3])
-    clone = await clone_db.get_clone(bot_id)
-    channels_count = len(clone.get('settings', {}).get('force_sub_channels', []))
-    
-    await clone_db.update_clone_setting(bot_id, 'force_sub_channels', [])
-    await query.answer(f"✅ Cleared {channels_count} channel(s)!", show_alert=True)
-    
-    query.data = f"fsub_manage_{bot_id}"
-    await fsub_manage(client, query)
 
 # ==================== AUTO DELETE SECTION ====================
 @Client.on_callback_query(filters.regex("^auto_delete_"))
