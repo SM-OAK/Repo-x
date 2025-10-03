@@ -4,10 +4,6 @@ from pyrogram.errors import PeerIdInvalid, ChannelInvalid, UsernameInvalid
 from database.clone_db import clone_db
 import logging
 
-# This is the helper function from your security.py.
-# We need it here to check permissions with the clone bot's token.
-from .security import verify_clone_bot_admin
-
 logger = logging.getLogger(__name__)
 
 # User states dictionary
@@ -80,17 +76,18 @@ async def handle_setting_input(client, message: types.Message):
                         types.InlineKeyboardButton('« Back', callback_data=f'start_photo_{bot_id}')
                     ]])
                 )
-            # BUG FIX: Clear user state on error
             del user_states[user_id]
             return await message.reply("❌ Invalid URL! Send a valid http(s) link.")
 
         # Force Subscribe channels
         elif action == 'add_fsub_channel':
+            # FIX: Moved the import here to prevent a circular dependency
+            from .security import verify_clone_bot_admin
+
             clone = await clone_db.get_clone(bot_id)
             channels = clone.get('settings', {}).get('force_sub_channels', [])
 
             if len(channels) >= 6:
-                # BUG FIX: Clear user state on error
                 del user_states[user_id]
                 return await message.reply(
                     "❌ Maximum 6 channels allowed!",
@@ -101,10 +98,8 @@ async def handle_setting_input(client, message: types.Message):
 
             channel_input = message.text.strip()
             try:
-                # Get chat object using the main bot
                 chat = await client.get_chat(channel_input)
 
-                # BUG FIX: Check against a simple list of IDs
                 if chat.id in channels:
                     del user_states[user_id]
                     return await message.reply(
@@ -114,7 +109,6 @@ async def handle_setting_input(client, message: types.Message):
                         ]])
                     )
                 
-                # BUG FIX: Verify using the CLONE BOT's token, not the main bot's
                 clone_bot_token = clone.get('bot_token')
                 if not clone_bot_token:
                     del user_states[user_id]
@@ -136,7 +130,6 @@ async def handle_setting_input(client, message: types.Message):
                         ]])
                     )
 
-                # BUG FIX: Save only the channel ID for consistency
                 channels.append(chat.id)
                 await clone_db.update_clone_setting(bot_id, 'force_sub_channels', channels)
                 del user_states[user_id]
@@ -149,7 +142,6 @@ async def handle_setting_input(client, message: types.Message):
                 )
 
             except (PeerIdInvalid, ChannelInvalid, UsernameInvalid):
-                # BUG FIX: Clear user state on error
                 del user_states[user_id]
                 return await message.reply(
                     "❌ Invalid channel!! Please check the username/ID and make sure the **main bot** (Repo Bot) has been added to the channel (it doesn't need admin rights, it just needs to be a member to see the channel's info).",
@@ -158,7 +150,6 @@ async def handle_setting_input(client, message: types.Message):
                     ]])
                 )
             except Exception as e:
-                # BUG FIX: Clear user state on error
                 del user_states[user_id]
                 logger.error(f"ForceSub add error: {e}", exc_info=True)
                 return await message.reply("❌ An unexpected error occurred while adding the channel.")
@@ -183,6 +174,37 @@ async def handle_setting_input(client, message: types.Message):
                 del user_states[user_id]
                 return await message.reply("❌ Please send a valid number!")
 
+        # Add Admin (ID or @username)
+        elif action == 'add_admin':
+            try:
+                if message.text.strip().startswith("@"):
+                    user = await client.get_users(message.text.strip())
+                    admin_id = user.id
+                else:
+                    admin_id = int(message.text.strip())
+
+                clone = await clone_db.get_clone(bot_id)
+                admins = clone.get('settings', {}).get('admins', [])
+
+                if admin_id in admins:
+                    del user_states[user_id]
+                    return await message.reply("❌ Already an admin!")
+
+                admins.append(admin_id)
+                await clone_db.update_clone_setting(bot_id, 'admins', admins)
+                del user_states[user_id]
+
+                return await message.reply(
+                    f"✅ Admin added successfully!\n<b>User ID:</b> <code>{admin_id}</code>",
+                    reply_markup=types.InlineKeyboardMarkup([[
+                        types.InlineKeyboardButton('« Back', callback_data=f'admins_{bot_id}')
+                    ]])
+                )
+            except Exception as e:
+                del user_states[user_id]
+                logger.error(f"Add admin error: {e}", exc_info=True)
+                return await message.reply("❌ Failed to add admin! Make sure the ID/username is valid.")
+        
     except Exception as e:
         logger.error(f"Input handler error: {e}", exc_info=True)
         if user_id in user_states:
