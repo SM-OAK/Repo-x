@@ -38,6 +38,46 @@ I am a permanent file store bot. I can store private files in a specified channe
 To know more, click the Help button.</b>"""
 
 HELP_TEXT = """<b>📚 Help Menu
+# clone_plugins/commands.py
+import base64
+import asyncio
+import logging
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.errors import PeerIdInvalid, ChannelInvalid, UserNotParticipant
+
+# --- Basic Setup ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+
+# --- Import config and database with fallback ---
+try:
+    from config import LOG_CHANNEL, ADMINS, AUTO_DELETE_MODE, AUTO_DELETE_TIME
+    CONFIG_LOADED = True
+except ImportError:
+    LOG_CHANNEL = None
+    ADMINS = []
+    AUTO_DELETE_MODE = False
+    AUTO_DELETE_TIME = 1800
+    CONFIG_LOADED = False
+    logger.warning("config.py not found, using default values.")
+
+try:
+    from database.clone_db import clone_db
+    DB_LOADED = True
+except ImportError:
+    DB_LOADED = False
+    logger.warning("database/clone_db.py not found, database features will be disabled.")
+
+
+# --- Default Texts ---
+DEFAULT_START_TEXT = """<b>Hᴇʟʟᴏ {} ✨
+
+I am a permanent file store bot. I can store private files in a specified channel and provide a shareable link.
+
+To know more, click the Help button.</b>"""
+
+HELP_TEXT = """<b>📚 Help Menu
 
 How to use the bot:
 1. Send me any file/video/audio.
@@ -91,7 +131,7 @@ async def get_start_keyboard(client):
         except ValueError:
             logger.warning(f"Invalid custom button format for bot {client.me.id}")
     return InlineKeyboardMarkup(buttons)
-    
+
 async def check_force_sub(client, user_id):
     """Check if a user is subscribed to all required channels."""
     settings = await get_clone_settings(client)
@@ -102,21 +142,24 @@ async def check_force_sub(client, user_id):
     
     not_joined = []
     for channel_data in fsub_channels:
-        # Handle both formats
+        # Handle both old format (plain ID) and new format (dict)
         if isinstance(channel_data, dict):
             channel_id = int(channel_data.get('id'))
         else:
             channel_id = int(channel_data)
-            
+
         try:
             await client.get_chat_member(channel_id, user_id)
         except UserNotParticipant:
             not_joined.append(channel_id)
+        except (PeerIdInvalid, ChannelInvalid, ValueError):
+            logger.warning(f"Invalid ForceSub channel ID: {channel_id} for bot {client.me.id}")
+            continue
         except Exception as e:
             logger.error(f"Error checking ForceSub for channel {channel_id}: {e}")
-            continue
+            not_joined.append(channel_id)
             
-    return len(not_joined) == 0, not_joined if not_joined else None
+    return not not_joined, not_joined or None
 
 async def get_channel_info(client, channel_id):
     """Get a channel's title and a valid invite link."""
@@ -204,7 +247,16 @@ async def clone_start(client, message):
     settings = await get_clone_settings(client)
     if settings.get('maintenance', False):
         return await message.reply("<b>🔧 Bot is under maintenance. Please try again later.</b>")
-    
+
+    # Send log message for new user
+    log_channel = settings.get('log_channel')
+    if log_channel:
+        try:
+            log_msg = f"👤 **New User Started Bot**\n\n- **User:** {message.from_user.mention}\n- **User ID:** `{message.from_user.id}`"
+            await client.send_message(log_channel, log_msg)
+        except Exception as e:
+            logger.error(f"Clone: Failed to send log to {log_channel}. Error: {e}")
+
     # Check Force Subscribe
     is_subscribed, channels = await check_force_sub(client, message.from_user.id)
     if not is_subscribed:
@@ -326,3 +378,203 @@ async def copy_link_callback(client, query: CallbackQuery):
 
 
 logger.info("✅ Clone bot commands module loaded successfully!")
+￼Enter
+How to use the bot:
+1. Send me any file/video/audio.
+2. I will provide you with a shareable link.
+3. Users can access the files from the link after completing the necessary verifications.
+
+It's that simple!</b>"""
+
+ABOUT_TEXT = """<b>━━━━━━━━━━━━━━━━━━━
+◈ My Name: File Store Clone
+◈ Creator: @VJ_Botz
+◈ Library: Pyrogram
+◈ Language: Python 3
+━━━━━━━━━━━━━━━━━━━</b>"""
+
+
+# ==================== HELPER FUNCTIONS ====================
+async def get_clone_settings(client):
+    """Get settings for this specific clone bot from the database."""
+    try:
+        if not DB_LOADED: return {}
+        bot_info = await client.get_me()
+        clone = await clone_db.get_clone(bot_info.id)
+        return clone.get('settings', {}) if clone else {}
+    except Exception as e:
+        logger.error(f"Clone: Error getting settings for bot {client.me.id}: {e}")
+        return {}
+
+async def get_start_text(client, user_mention):
+    """Get custom start text from settings, or return the default."""
+    settings = await get_clone_settings(client)
+    custom_text = settings.get('start_message')
+    if custom_text:
+        return custom_text.replace('{mention}', user_mention).replace('{username}', f"@{client.me.username}")
+    return DEFAULT_START_TEXT.format(user_mention)
+
+async def get_start_keyboard(client):
+    """Get the keyboard for the start message, including a custom button if set."""
+    settings = await get_clone_settings(client)
+    buttons = [
+        [
+            InlineKeyboardButton('💁‍♀️ Help', callback_data='clone_help'),
+            InlineKeyboardButton('😊 About', callback_data='clone_about')
+        ]
+    ]
+    custom_btn = settings.get('start_button')
+    if custom_btn and ' - ' in custom_btn:
+        try:
+            btn_text, btn_url = custom_btn.split(' - ', 1)
+            buttons.append([InlineKeyboardButton(btn_text.strip(), url=btn_url.strip())])
+        except ValueError:
+            logger.warning(f"Invalid custom button format for bot {client.me.id}")
+    return InlineKeyboardMarkup(buttons)
+
+async def check_force_sub(client, user_id):
+    """Check if a user is subscribed to all required channels."""
+    settings = await get_clone_settings(client)
+    if not settings: return True, None
+    
+    fsub_channels = settings.get('force_sub_channels', [])
+    if not fsub_channels: return True, None
+    
+    not_joined = []
+    for channel_data in fsub_channels:
+        # Handle both old format (plain ID) and new format (dict)
+        if isinstance(channel_data, dict):
+            channel_id = int(channel_data.get('id'))
+        else:
+            channel_id = int(channel_data)
+
+        try:
+            await client.get_chat_member(channel_id, user_id)
+        except UserNotParticipant:
+            not_joined.append(channel_id)
+        except (PeerIdInvalid, ChannelInvalid, ValueError):
+            logger.warning(f"Invalid ForceSub channel ID: {channel_id} for bot {client.me.id}")
+            continue
+        except Exception as e:
+            logger.error(f"Error checking ForceSub for channel {channel_id}: {e}")
+            not_joined.append(channel_id)
+            
+    return not not_joined, not_joined or None
+
+async def get_channel_info(client, channel_id):
+    """Get a channel's title and a valid invite link."""
+    try:
+        chat = await client.get_chat(channel_id)
+        if chat.username:
+            link = f"https://t.me/{chat.username}"
+        else:
+            link = await client.export_chat_invite_link(chat.id)
+        return link, chat.title
+    except Exception as e:
+        logger.error(f"Could not get info for channel {channel_id}: {e}")
+        return None, "Channel"
+
+async def decode_file_id(data):
+    """Decode a file ID from a Base64 encoded string."""
+    try:
+        decoded_bytes = base64.urlsafe_b64decode(data + "=" * (-len(data) % 4))
+  decoded_string = decoded_bytes.decode("ascii")
+        if decoded_string.startswith("file_"):
+            return int(decoded_string.split("_", 1)[1])
+        return None
+    except Exception as e:
+        logger.error(f"Clone: File ID decode error - {e}")
+        return None
+
+async def send_file_to_user(client, message, file_id):
+    """Retrieve a file from the database channel and send it to the user."""
+    settings = await get_clone_settings(client)
+    db_channel = settings.get('db_channel') or LOG_CHANNEL
+    
+    if not db_channel:
+        await message.reply("<b>❌ File storage (DB Channel) is not configured by the admin.</b>")
+        return False
+    
+    try:
+        file_msg = await client.get_messages(db_channel, file_id)
+        if not file_msg or not file_msg.media:
+            await message.reply("<b>❌ File not found!</b>\nIt might have been deleted from the database.")
+            return False
+            
+        # Get filename and size safely
+        file_ref = file_msg.document or file_msg.video or file_msg.audio or file_msg.photo
+        filename = getattr(file_ref, 'file_name', 'N/A')
+        filesize = getattr(file_ref, 'file_size', 0)
+        
+        # Apply custom caption
+        caption = file_msg.caption
+        custom_caption = settings.get('file_caption')
+        if custom_caption:
+            caption = custom_caption.replace('{filename}', filename)
+            caption = caption.replace('{size}', f"{filesize / (1024*1024):.2f} MB")
+            caption = caption.replace('{caption}', file_msg.caption or '')
+
+        protect = settings.get('protect_mode', False)
+        
+        sent_msg = await file_msg.copy(message.from_user.id, caption=caption, protect_content=protect)
+        
+        # Handle auto-delete
+        if settings.get('auto_delete', AUTO_DELETE_MODE):
+            delete_time = settings.get('auto_delete_time', AUTO_DELETE_TIME)
+            minutes, seconds = divmod(delete_time, 60)
+            time_str = (f"{minutes} minute(s)" if minutes else "") + (f" {seconds} second(s)" if seconds else "")
+            
+            warning = await message.reply(f"<b>⚠️ This file will be deleted in {time_str.strip()}. Please save it.</b>")
+            await asyncio.sleep(delete_time)
+            
+            try:
+                await sent_msg.delete()
+                await warning.edit_text("✅ File deleted as per schedule.")
+            except Exception: pass
+            
+        if DB_LOADED:
+            await clone_db.update_last_used(client.me.id)
+        return True
+        
+    except Exception as e:
+        logger.error(f"Clone: Error sending file - {e}")
+        await message.reply(f"<b>❌ An error occurred while sending the file.</b>")
+        return False
+
+# ==================== BOT COMMANDS & MESSAGE HANDLERS ====================
+@Client.on_message(filters.command("start") & filters.private, group=1)
+async def clone_start(client, message):
+    settings = await get_clone_settings(client)
+    if settings.get('maintenance', False):
+        return await message.reply("<b>🔧 Bot is under maintenance. Please try again later.</b>")
+
+    # Send log message for new user
+    log_channel = settings.get('log_channel')
+    if log_channel:
+        try:
+            log_msg = f"👤 **New User Started Bot**\n\n- **User:** {message.from_user.mention}\n- **User ID:** `{message.from_user.id}`"
+            await client.send_message(log_channel, log_msg)
+        except Exception as e:
+            logger.error(f"Clone: Failed to send log to {log_channel}. Error: {e}")
+
+    # Check Force Subscribe
+    is_subscribed, channels = await check_force_sub(client, message.from_user.id)
+    if not is_subscribed:
+        buttons = []
+        for channel_id in channels:
+            link, title = await get_channel_info(client, channel_id)
+            if link: buttons.append([InlineKeyboardButton(f'📢 Join {title}', url=link)])
+        buttons.append([InlineKeyboardButton('🔄 Try Again', callback_data='clone_start')])
+        await message.reply("<b>⚠️ You must join our channel(s) to use this bot.</b>", reply_markup=InlineKeyboardMarkup(buttons))
+        return
+
+    # Handle deep links for file access
+    if len(message.command) > 1:
+        file_id = await decode_file_id(message.command[1])
+        if file_id:
+            loading = await message.reply("<b>🔄 Fetching your file, please wait...</b>")
+            await send_file_to_user(client, message, file_id)
+            await loading.delete()
+            return
+            
+    # Regular start message
