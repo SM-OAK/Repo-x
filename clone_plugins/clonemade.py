@@ -91,7 +91,7 @@ async def get_start_keyboard(client):
         except ValueError:
             logger.warning(f"Invalid custom button format for bot {client.me.id}")
     return InlineKeyboardMarkup(buttons)
-
+    
 async def check_force_sub(client, user_id):
     """Check if a user is subscribed to all required channels."""
     settings = await get_clone_settings(client)
@@ -101,19 +101,22 @@ async def check_force_sub(client, user_id):
     if not fsub_channels: return True, None
     
     not_joined = []
-    for channel_id in fsub_channels:
+    for channel_data in fsub_channels:
+        # Handle both formats
+        if isinstance(channel_data, dict):
+            channel_id = int(channel_data.get('id'))
+        else:
+            channel_id = int(channel_data)
+            
         try:
             await client.get_chat_member(channel_id, user_id)
         except UserNotParticipant:
             not_joined.append(channel_id)
-        except (PeerIdInvalid, ChannelInvalid, ValueError):
-            logger.warning(f"Invalid ForceSub channel ID: {channel_id} for bot {client.me.id}")
-            continue
         except Exception as e:
             logger.error(f"Error checking ForceSub for channel {channel_id}: {e}")
-            not_joined.append(channel_id)
+            continue
             
-    return not not_joined, not_joined or None
+    return len(not_joined) == 0, not_joined if not_joined else None
 
 async def get_channel_info(client, channel_id):
     """Get a channel's title and a valid invite link."""
