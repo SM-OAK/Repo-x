@@ -1,9 +1,11 @@
 from pyrogram import Client, filters
 from pyrogram.types import Message
+from pyrogram.errors import FloodWait
 from config import ADMINS
 from database.database import db
 import asyncio
 import logging
+import sys
 
 logger = logging.getLogger(__name__)
 
@@ -16,40 +18,41 @@ async def users_command(client, message: Message):
 @Client.on_message(filters.command("broadcast") & filters.user(ADMINS))
 async def broadcast_command(client, message: Message):
     """Broadcast message to all users"""
-    if message.reply_to_message:
-        msg_to_send = message.reply_to_message
-    else:
+    if not message.reply_to_message:
         return await message.reply(
             "<b>Rᴇᴘʟʏ ᴛᴏ ᴀ ᴍᴇssᴀɢᴇ ᴛᴏ ʙʀᴏᴀᴅᴄᴀsᴛ!</b>"
         )
     
+    msg_to_send = message.reply_to_message
     users = await db.get_all_users()
-    
     total_users = await db.total_users_count()
     success = 0
     failed = 0
     
     status_msg = await message.reply(
         f"<b>📢 Bʀᴏᴀᴅᴄᴀsᴛ Sᴛᴀʀᴛᴇᴅ...\n\n"
-        f"Tᴏᴛᴀʟ Usᴇʀs: {total_users}\n"
-        f"Sᴜᴄᴄᴇss: {success}\n"
-        f"Fᴀɪʟᴇᴅ: {failed}</b>"
+        f"Tᴏᴛᴀʟ Usᴇʀs: {total_users}</b>"
     )
     
     async for user in users:
         try:
             await msg_to_send.copy(chat_id=user['id'])
             success += 1
-        except Exception as e:
+        except FloodWait as e:
+            # Handle rate limits
+            await asyncio.sleep(e.value)
+            await msg_to_send.copy(chat_id=user['id'])
+            success += 1
+        except Exception:
             failed += 1
-            logger.error(f"Broadcast failed for {user['id']}: {e}")
         
-        if (success + failed) % 20 == 0:
+        # Edit status message less frequently to avoid hitting API limits
+        if (success + failed) % 100 == 0 or (success + failed) == total_users:
             await status_msg.edit_text(
                 f"<b>📢 Bʀᴏᴀᴅᴄᴀsᴛ Iɴ Pʀᴏɢʀᴇss...\n\n"
                 f"Tᴏᴛᴀʟ: {total_users}\n"
-                f"Sᴜᴄᴄᴇss: {success}\n"
-                f"Fᴀɪʟᴇᴅ: {failed}</b>"
+                f"✅ Sᴜᴄᴄᴇss: {success}\n"
+                f"❌ Fᴀɪʟᴇᴅ: {failed}</b>"
             )
     
     await status_msg.edit_text(
@@ -65,9 +68,12 @@ async def ban_user(client, message: Message):
     if len(message.command) < 2:
         return await message.reply("<b>Usᴀɢᴇ: /ban user_id</b>")
     
-    user_id = int(message.command[1])
-    await db.delete_user(user_id)
-    await message.reply(f"<b>✅ Usᴇʀ {user_id} ʙᴀɴɴᴇᴅ!</b>")
+    try:
+        user_id = int(message.command[1])
+        await db.delete_user(user_id)
+        await message.reply(f"<b>✅ Usᴇʀ {user_id} ʙᴀɴɴᴇᴅ!</b>")
+    except (ValueError, IndexError):
+        await message.reply("<b>Invalid user ID format.</b>")
 
 @Client.on_message(filters.command("stats") & filters.user(ADMINS))
 async def stats_command(client, message: Message):
@@ -85,9 +91,9 @@ async def stats_command(client, message: Message):
 
 @Client.on_message(filters.command("restart") & filters.user(ADMINS))
 async def restart_bot(client, message: Message):
-    """Restart the bot"""
-    await message.reply("<b>🔄 Rᴇsᴛᴀʀᴛɪɴɢ ʙᴏᴛ...</b>")
-    # Add restart logic here
-    import sys
-    import os
-    os.execl(sys.executable, sys.executable, *sys.argv)
+    """Gracefully restart the bot"""
+    await message.reply("<b>✅ Sᴇɴᴛ ʀᴇsᴛᴀʀᴛ ᴄᴏᴍᴍᴀɴᴅ... Bᴏᴛ ᴡɪʟʟ ʀᴇsᴛᴀʀᴛ sʜᴏʀᴛʟʏ.</b>")
+    # This will stop the bot, and your process manager should restart it.
+    # It allows the graceful shutdown in bot.py to run.
+    sys.exit()
+
