@@ -3,9 +3,19 @@ import re
 import os
 import glob
 import logging
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from pyrogram.errors import ListenerTimeout
+
+# FIX: Handle ListenerTimeout import for different Pyrogram versions
+try:
+    from pyrogram.errors import ListenerTimeout
+except ImportError:
+    # Fallback for older versions or when pyrogramx is used
+    class ListenerTimeout(Exception):
+        """Custom timeout exception for compatibility"""
+        pass
+
 from config import CLONE_MODE, API_ID, API_HASH, ADMINS
 from database.clone_db import clone_db
 from Script import script
@@ -112,8 +122,15 @@ async def start_clone_process(client, chat_id, user_id, message_to_edit=None):
                 "Use /cancel to stop this process.",
                 timeout=300
             )
-        except ListenerTimeout:
+        except (ListenerTimeout, TimeoutError, asyncio.TimeoutError) as e:
+            logger.info(f"User timeout: {e}")
             text = "⏱️ **Timeout!** You took too long to respond. Please try again."
+            if message_to_edit:
+                return await message_to_edit.edit_text(text)
+            return await client.send_message(chat_id, text)
+        except Exception as e:
+            logger.error(f"Ask error: {e}")
+            text = f"⚠️ **Error:** Unable to receive your message.\n\n<code>{e}</code>"
             if message_to_edit:
                 return await message_to_edit.edit_text(text)
             return await client.send_message(chat_id, text)
