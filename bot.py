@@ -33,28 +33,34 @@ from TechVJ.bot.clients import initialize_clients
 # Active clones for graceful shutdown
 # -------------------------------
 try:
-    from plugins.clone_manager import active_clones
+    from plugins.clone_manager import active_clones, stop_all_clones
 except ImportError:
     active_clones = {}
+    
+    async def stop_all_clones():
+        """Fallback stop function"""
+        for bot_id, bot_client in list(active_clones.items()):
+            try:
+                await bot_client.stop()
+            except:
+                pass
+        active_clones.clear()
 
 # -------------------------------
 # Graceful Shutdown
 # -------------------------------
 async def shutdown(signal_received=None):
     """
-    FIXED: Better logging and error handling during shutdown
+    FIXED: Better logging and proper clone cleanup
     """
     print(f"\n⚠️ Shutdown initiated. Signal: {signal_received}")
     
-    # Stop all clone bots
-    if active_clones:
-        print(f"🔄 Stopping {len(active_clones)} clone bot(s)...")
-        for bot_id, bot_client in list(active_clones.items()):
-            try:
-                await bot_client.stop()
-                print(f"  ✅ Stopped clone bot {bot_id}")
-            except Exception as e:
-                print(f"  ❌ Failed to stop clone {bot_id}: {e}")
+    # Stop all clone bots using proper cleanup function
+    try:
+        await stop_all_clones()
+        print("✅ All clones stopped")
+    except Exception as e:
+        print(f"⚠️ Error stopping clones: {e}")
     
     # Stop main bot
     try:
