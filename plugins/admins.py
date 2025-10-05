@@ -6,6 +6,7 @@ from database.database import db
 import asyncio
 import logging
 import sys
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -91,9 +92,8 @@ async def stats_command(client, message: Message):
 
 @Client.on_message(filters.command("restart") & filters.user(ADMINS))
 async def restart_bot(client, message: Message):
-    """Gracefully restart the bot"""
-    await message.reply("<b>✅ Sᴇɴᴛ ʀᴇsᴛᴀʀᴛ ᴄᴏᴍᴍᴀɴᴅ... Bᴏᴛ ᴡɪʟʟ ʀᴇsᴛᴀʀᴛ sʜᴏʀᴛʟʏ.</b>")
-    # This will stop the bot, and your process manager should restart it.
-    # It allows the graceful shutdown in bot.py to run.
-    sys.exit()
+    """Restart the bot"""
+    await message.reply("<b>✅ Sᴇɴᴛ ʀᴇsᴛᴀʀᴛ ᴄᴏᴍᴍᴀɴᴅ... Bᴏᴛ ɪs ʀᴇsᴛᴀʀᴛɪɴɢ.</b>")
+    # This is a more forceful restart method that works without a process manager
+    os.execl(sys.executable, sys.executable, *sys.argv)
 
