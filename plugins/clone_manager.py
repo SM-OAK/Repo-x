@@ -293,11 +293,21 @@ async def delete_clone_button_callback(client, query: CallbackQuery):
     if clone['user_id'] != user_id and user_id not in ADMINS:
         return await query.answer("❌ This is not your clone!", show_alert=True)
 
-    # Stop bot if running
+    # Stop bot if running - COMPLETE SHUTDOWN
     if bot_id in active_clones:
         try:
-            await active_clones[bot_id].stop()
-            logger.info(f"Stopped clone bot {bot_id}")
+            clone_client = active_clones[bot_id]
+            
+            # FIX: Proper shutdown sequence
+            logger.info(f"Stopping clone bot {bot_id}...")
+            
+            # Stop the client (this stops handlers and disconnect)
+            await clone_client.stop()
+            
+            # Give time for cleanup
+            await asyncio.sleep(0.5)
+            
+            logger.info(f"✅ Stopped clone bot {bot_id}")
         except Exception as e:
             logger.error(f"Error stopping clone {bot_id}: {e}")
         finally:
@@ -332,6 +342,7 @@ async def restart_bots():
     - ✅ Session naming now consistent (uses bot_id)
     - ✅ Better error handling per clone
     - ✅ Continues even if one clone fails
+    - ✅ Skips already running clones
     """
     if not CLONE_MODE:
         logger.info("Clone mode disabled")
@@ -346,6 +357,12 @@ async def restart_bots():
         bot_id = clone['bot_id']
         bot_token = clone['bot_token']
         username = clone.get('username', 'unknown')
+        
+        # FIX: Skip if already running
+        if bot_id in active_clones:
+            logger.info(f"⚠️ Clone {bot_id} already running, skipping...")
+            success_count += 1
+            continue
         
         try:
             # FIX: Use bot_id as session name (consistent with creation)
@@ -366,3 +383,29 @@ async def restart_bots():
             # Continue with next clone even if one fails
 
     logger.info(f"✅ Successfully restarted {success_count}/{len(clones)} clones")
+
+# -----------------------------
+# Cleanup Function (for graceful shutdown)
+# -----------------------------
+async def stop_all_clones():
+    """
+    ✅ NEW: Properly stop all running clones
+    Used during bot shutdown or restart
+    """
+    if not active_clones:
+        logger.info("No active clones to stop")
+        return
+    
+    logger.info(f"🛑 Stopping {len(active_clones)} active clone(s)...")
+    stopped = 0
+    
+    for bot_id, client in list(active_clones.items()):
+        try:
+            await client.stop()
+            stopped += 1
+            logger.info(f"  ✅ Stopped clone {bot_id}")
+        except Exception as e:
+            logger.error(f"  ❌ Error stopping clone {bot_id}: {e}")
+    
+    active_clones.clear()
+    logger.info(f"✅ Stopped {stopped} clone(s)")
