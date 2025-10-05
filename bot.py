@@ -41,26 +41,36 @@ except ImportError:
 # Graceful Shutdown
 # -------------------------------
 async def shutdown(signal_received=None):
-    print(f"⚠️ Shutdown initiated. Signal: {signal_received}")
+    """
+    FIXED: Better logging and error handling during shutdown
+    """
+    print(f"\n⚠️ Shutdown initiated. Signal: {signal_received}")
+    
     # Stop all clone bots
-    for bot_id, bot_client in active_clones.items():
-        try:
-            await bot_client.stop()
-            print(f"✅ Stopped clone bot {bot_id}")
-        except Exception as e:
-            print(f"❌ Failed to stop clone {bot_id}: {e}")
+    if active_clones:
+        print(f"🔄 Stopping {len(active_clones)} clone bot(s)...")
+        for bot_id, bot_client in list(active_clones.items()):
+            try:
+                await bot_client.stop()
+                print(f"  ✅ Stopped clone bot {bot_id}")
+            except Exception as e:
+                print(f"  ❌ Failed to stop clone {bot_id}: {e}")
+    
     # Stop main bot
     try:
         await StreamBot.stop()
         print("✅ Main bot stopped")
     except Exception as e:
         print(f"❌ Failed to stop main bot: {e}")
-    # Stop event loop
-    asyncio.get_event_loop().stop()
+    
+    print("👋 Shutdown complete!")
 
 # Register OS signals
+def signal_handler(sig):
+    asyncio.create_task(shutdown(sig))
+
 for sig in (signal.SIGINT, signal.SIGTERM):
-    asyncio.get_event_loop().add_signal_handler(sig, lambda s=sig: asyncio.create_task(shutdown(s)))
+    asyncio.get_event_loop().add_signal_handler(sig, lambda s=sig: signal_handler(s))
 
 # -------------------------------
 # Safe import restart_bots
@@ -68,39 +78,59 @@ for sig in (signal.SIGINT, signal.SIGTERM):
 try:
     from plugins.clone_manager import restart_bots
 except ImportError:
-    print("⚠️ plugins.clone not found, using fallback restart function")
+    print("⚠️ plugins.clone_manager not found, using fallback restart function")
+    
     async def restart_bots():
-        """Restart all clones from DB"""
+        """
+        Fallback function to restart clones if clone_manager import fails
+        
+        FIXED ISSUES:
+        - ✅ Session naming now uses bot_id (consistent)
+        - ✅ Better error handling
+        """
         try:
             from pymongo import MongoClient
             mongo_client = MongoClient(DB_URI)
             mongo_db = mongo_client["cloned_vjbotz"]
             bots = list(mongo_db.bots.find())
+            
             if not bots:
-                print("No clones to restart")
+                print("No clones found in database")
                 return
-            print(f"Found {len(bots)} clone(s) to restart...")
+            
+            print(f"Found {len(bots)} clone(s) in database...")
+            success_count = 0
+            
             for bot in bots:
+                bot_id = bot.get('bot_id')
                 bot_token = bot.get('bot_token')
                 bot_username = bot.get('username', 'unknown')
-                if not bot_token:
+                
+                if not bot_token or not bot_id:
+                    print(f"  ⚠️ Skipping invalid bot entry: {bot_username}")
                     continue
+                
                 try:
+                    # FIX: Use bot_id as session name (consistent naming)
+                    session_name = f"clone_sessions/{bot_id}"
                     clone_client = Client(
-                        f"clone_{bot_token[:8]}",
+                        session_name,
                         API_ID,
                         API_HASH,
                         bot_token=bot_token,
                         plugins={"root": "clone_plugins"}
                     )
                     await clone_client.start()
-                    active_clones[bot.get('bot_id')] = clone_client
-                    print(f"  ✅ Restarted clone: @{bot_username}")
+                    active_clones[bot_id] = clone_client
+                    success_count += 1
+                    print(f"  ✅ Restarted clone: @{bot_username} (ID: {bot_id})")
                 except Exception as e:
                     print(f"  ❌ Failed to restart @{bot_username}: {e}")
-            print("Clone restart process completed")
+            
+            print(f"✅ Successfully restarted {success_count}/{len(bots)} clone(s)")
+            
         except Exception as e:
-            print(f"Error in restart_bots: {e}")
+            print(f"❌ Error in restart_bots fallback: {e}")
 
 # -------------------------------
 # Load Plugins
@@ -117,83 +147,126 @@ StreamBot.start()
 loop = asyncio.get_event_loop()
 
 async def start():
-    print("\nInitializing Tech VJ Bot...")
-    bot_info = await StreamBot.get_me()
-    StreamBot.username = bot_info.username
+    """
+    FIXED: Better error handling and logging throughout startup
+    """
+    print("\n" + "="*50)
+    print("🚀 Initializing Tech VJ Bot...")
+    print("="*50 + "\n")
+    
+    try:
+        bot_info = await StreamBot.get_me()
+        StreamBot.username = bot_info.username
+    except Exception as e:
+        print(f"❌ Failed to get bot info: {e}")
+        return
 
     # Initialize clients
-    await initialize_clients()
+    try:
+        await initialize_clients()
+        print("✅ Clients initialized")
+    except Exception as e:
+        print(f"⚠️ Client initialization warning: {e}")
 
     # Load main plugins
     print("\n🔹 Loading Main Plugins...")
+    loaded_plugins = 0
     for name in files:
-        with open(name) as a:
-            plugin_name = Path(a.name).stem
-            plugins_dir = Path(f"plugins/{plugin_name}.py")
-            import_path = f"plugins.{plugin_name}"
-            spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
-            load = importlib.util.module_from_spec(spec)
-            spec.loader.exec_module(load)
-            sys.modules["plugins." + plugin_name] = load
-            print(f"  ✅ Main Plugin => {plugin_name}")
+        try:
+            with open(name) as a:
+                plugin_name = Path(a.name).stem
+                plugins_dir = Path(f"plugins/{plugin_name}.py")
+                import_path = f"plugins.{plugin_name}"
+                spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
+                load = importlib.util.module_from_spec(spec)
+                spec.loader.exec_module(load)
+                sys.modules["plugins." + plugin_name] = load
+                loaded_plugins += 1
+                print(f"  ✅ {plugin_name}")
+        except Exception as e:
+            print(f"  ❌ Failed to load {plugin_name}: {e}")
+    
+    print(f"\n✅ Loaded {loaded_plugins} main plugins")
 
     # Load clone plugins if enabled
     if CLONE_MODE:
         print("\n🔸 Loading Clone Plugins...")
+        loaded_clone_plugins = 0
         for name in clone_files:
-            with open(name) as a:
-                plugin_name = Path(a.name).stem
-                if plugin_name == "__init__":
-                    continue
-                plugins_dir = Path(f"clone_plugins/{plugin_name}.py")
-                import_path = f"clone_plugins.{plugin_name}"
-                try:
+            try:
+                with open(name) as a:
+                    plugin_name = Path(a.name).stem
+                    if plugin_name == "__init__":
+                        continue
+                    plugins_dir = Path(f"clone_plugins/{plugin_name}.py")
+                    import_path = f"clone_plugins.{plugin_name}"
                     spec = importlib.util.spec_from_file_location(import_path, plugins_dir)
                     load = importlib.util.module_from_spec(spec)
                     spec.loader.exec_module(load)
                     sys.modules["clone_plugins." + plugin_name] = load
-                    print(f"  ✅ Clone Plugin => {plugin_name}")
-                except Exception as e:
-                    print(f"  ❌ Error loading clone plugin {plugin_name}: {e}")
+                    loaded_clone_plugins += 1
+                    print(f"  ✅ {plugin_name}")
+            except Exception as e:
+                print(f"  ❌ Failed to load clone plugin {plugin_name}: {e}")
+        
+        print(f"\n✅ Loaded {loaded_clone_plugins} clone plugins")
     else:
         print("\n⚠️ Clone Mode Disabled - Skipping clone plugins")
 
     # Keepalive for Heroku
     if ON_HEROKU:
         asyncio.create_task(ping_server())
+        print("✅ Heroku keepalive started")
 
     # Start web server
-    app = web.AppRunner(await web_server())
-    await app.setup()
-    bind_address = "0.0.0.0"
-    await web.TCPSite(app, bind_address, PORT).start()
+    try:
+        app = web.AppRunner(await web_server())
+        await app.setup()
+        bind_address = "0.0.0.0"
+        await web.TCPSite(app, bind_address, PORT).start()
+        print(f"✅ Web server started on port {PORT}")
+    except Exception as e:
+        print(f"⚠️ Web server error: {e}")
 
     # Send restart message to LOG_CHANNEL
-    tz = pytz.timezone("Asia/Kolkata")
-    today = date.today()
-    now = datetime.now(tz)
-    time = now.strftime("%H:%M:%S %p")
-    await StreamBot.send_message(chat_id=LOG_CHANNEL, text=script.RESTART_TXT.format(today, time))
+    try:
+        tz = pytz.timezone("Asia/Kolkata")
+        today = date.today()
+        now = datetime.now(tz)
+        time = now.strftime("%H:%M:%S %p")
+        await StreamBot.send_message(
+            chat_id=LOG_CHANNEL, 
+            text=script.RESTART_TXT.format(today, time)
+        )
+        print("✅ Restart notification sent")
+    except Exception as e:
+        print(f"⚠️ Failed to send restart notification: {e}")
 
     # Restart clone bots
     if CLONE_MODE:
-        print("\n🔄 Restarting existing clone bots...")
+        print("\n🔄 Restarting Clone Bots...")
         try:
             await restart_bots()
         except Exception as e:
             print(f"❌ Error restarting clones: {e}")
 
     # Startup complete
-    print("\n✅ Bot Started Successfully!")
-    print(f"👤 Bot Username: @{bot_info.username}")
+    print("\n" + "="*50)
+    print("✅ Bot Started Successfully!")
+    print("="*50)
+    print(f"👤 Username: @{bot_info.username}")
     print(f"🆔 Bot ID: {bot_info.id}")
-    print(f"📦 Pyrogram Version: {__version__}")
-    print(f"🔧 Python Version: {sys.version.split()[0]}")
+    print(f"📦 Pyrogram: v{__version__}")
+    print(f"🐍 Python: {sys.version.split()[0]}")
+    print(f"🤖 Active Clones: {len(active_clones)}")
+    print("="*50)
     print("\n⚡ Powered By @VJ_Botz\n")
 
     # Idle with graceful shutdown
     try:
         await idle()
+    except KeyboardInterrupt:
+        print("\n⚠️ Keyboard interrupt received")
     finally:
         await shutdown("idle finished")
 
@@ -204,6 +277,8 @@ if __name__ == "__main__":
     try:
         loop.run_until_complete(start())
     except KeyboardInterrupt:
-        logging.info("Service stopped by user 👋")
+        logging.info("🛑 Service stopped by user (Ctrl+C)")
     except Exception as e:
-        logging.error(f"Fatal error: {e}")
+        logging.error(f"💥 Fatal error: {e}", exc_info=True)
+    finally:
+        print("\n👋 Goodbye!")
