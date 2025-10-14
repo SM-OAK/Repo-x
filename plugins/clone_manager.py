@@ -6,14 +6,13 @@ import logging
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from pyrogram.raw.functions.bots import SetBotCommands
+from pyrogram.raw.types import BotCommand, BotCommandScopeDefault
 
-# FIX: Handle ListenerTimeout import for different Pyrogram versions
 try:
     from pyrogram.errors import ListenerTimeout
 except ImportError:
-    # Fallback for older versions or when pyrogramx is used
     class ListenerTimeout(Exception):
-        """Custom timeout exception for compatibility"""
         pass
 
 from config import CLONE_MODE, API_ID, API_HASH, ADMINS
@@ -23,12 +22,38 @@ from Script import script
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
-# Active clone clients {bot_id: Client}
+# Active clones
 active_clones = {}
 
-# -----------------------------
-# Main Clone Menu (callback: "clone")
-# -----------------------------
+# ==================== AUTO SETUP BOT COMMANDS ====================
+async def setup_bot_commands(client):
+    """Automatically configure bot commands via Telegram API."""
+    commands = [
+        ("start", "🚀 Start the bot"),
+        ("help", "❓ Get help information"),
+        ("about", "ℹ️ About the bot"),
+        ("batch", "📦 Create batch link (multiple files)"),
+        ("done", "✅ Finish batch and get link"),
+        ("cancel", "❌ Cancel current batch")
+    ]
+    
+    try:
+        bot_commands = [BotCommand(command=cmd, description=desc) for cmd, desc in commands]
+        
+        await client.invoke(
+            SetBotCommands(
+                scope=BotCommandScopeDefault(),
+                lang_code="en",
+                commands=bot_commands
+            )
+        )
+        logger.info(f"✅ Commands set for @{client.me.username}")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Failed to set commands for {client.me.username}: {e}")
+        return False
+
+# ==================== CLONE MENU ====================
 @Client.on_callback_query(filters.regex("^clone$"))
 async def clone_management_menu(client, query: CallbackQuery):
     if not CLONE_MODE:
@@ -37,31 +62,26 @@ async def clone_management_menu(client, query: CallbackQuery):
     user_id = query.from_user.id
     buttons = []
     
-    # Get clones from DB (Admins see all, users see their own)
     clones = await clone_db.get_clones_by_user(user_id)
     if user_id in ADMINS:
         clones = await clone_db.get_all_clones()
 
     if not clones:
-        reply_text = "✨ **No Clones Found**\n\nYou haven't created any clone bots yet. Use the button below to get started."
+        reply_text = "✨ **No Clones Found**\n\nCreate your first clone bot now!"
     else:
-        reply_text = "✨ **Manage Clone's**\n\nYou can now manage and create your very own identical clone bot, mirroring all my awesome features, using the given buttons."
+        reply_text = "✨ **Manage Your Clones**\n\nSelect a bot to customize or create a new one."
         for clone in clones:
+            status = "🟢" if clone.get('is_active', True) else "🔴"
             buttons.append(
-                [InlineKeyboardButton(f"🤖 {clone['name']}", callback_data=f"customize_{clone['bot_id']}")]
+                [InlineKeyboardButton(f"{status} {clone['name']}", callback_data=f"customize_{clone['bot_id']}")]
             )
 
-    buttons.append([InlineKeyboardButton('➕ Add Clone', callback_data='add_clone')])
+    buttons.append([InlineKeyboardButton('➕ Create New Clone', callback_data='add_clone')])
     buttons.append([InlineKeyboardButton('🔙 Back', callback_data='start')])
 
-    await query.message.edit_text(
-        reply_text,
-        reply_markup=InlineKeyboardMarkup(buttons)
-    )
+    await query.message.edit_text(reply_text, reply_markup=InlineKeyboardMarkup(buttons))
 
-# -----------------------------
-# Customize Clone Menu
-# -----------------------------
+# ==================== CUSTOMIZE MENU ====================
 @Client.on_callback_query(filters.regex("^customize_"))
 async def customize_clone(client, query: CallbackQuery):
     bot_id = int(query.data.split("_")[1])
@@ -73,40 +93,41 @@ async def customize_clone(client, query: CallbackQuery):
     if clone['user_id'] != query.from_user.id and query.from_user.id not in ADMINS:
         return await query.answer("This is not your bot!", show_alert=True)
 
+    status = "🟢 Active" if clone.get('is_active', True) else "🔴 Inactive"
+    
     buttons = [
         [
-            InlineKeyboardButton('📝 START MSG', callback_data=f'set_start_{bot_id}'),
-            InlineKeyboardButton('🔒 FORCE SUB', callback_data=f'set_fsub_{bot_id}')
+            InlineKeyboardButton('🎨 Appearance', callback_data=f'appearance_{bot_id}'),
+            InlineKeyboardButton('🔒 Security', callback_data=f'security_{bot_id}')
         ],
         [
-            InlineKeyboardButton('🗑️ DELETE CLONE', callback_data=f'delete_clone_{bot_id}')
+            InlineKeyboardButton('📁 Files', callback_data=f'files_{bot_id}'),
+            InlineKeyboardButton('📊 Database', callback_data=f'database_{bot_id}')
         ],
         [
-            InlineKeyboardButton('🔙 Back to Clones', callback_data='clone')
-        ]
+            InlineKeyboardButton('👥 Admins', callback_data=f'admins_{bot_id}'),
+            InlineKeyboardButton('⚙️ Settings', callback_data=f'bot_settings_{bot_id}')
+        ],
+        [
+            InlineKeyboardButton('🔄 Restart Bot', callback_data=f'restart_{bot_id}'),
+            InlineKeyboardButton('🗑️ Delete', callback_data=f'delete_clone_{bot_id}')
+        ],
+        [InlineKeyboardButton('🔙 Back to Clones', callback_data='clone')]
     ]
 
     await query.message.edit_text(
-        f"🛠️ **Customize Clone: {clone['name']}**\n\n"
-        f"Configure your bot's settings using the buttons below.",
+        f"<b>🤖 {clone['name']}</b>\n"
+        f"<b>Username:</b> @{clone['username']}\n"
+        f"<b>Status:</b> {status}\n\n"
+        f"<i>Select category to customize:</i>",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# -----------------------------
-# Core Clone Creation Logic (Reusable Function)
-# -----------------------------
+# ==================== CORE CLONE CREATION ====================
 async def start_clone_process(client, chat_id, user_id, message_to_edit=None):
-    """
-    Core clone creation logic that can be called from both command and callback
-    
-    FIXED ISSUES:
-    - ✅ Session naming now uses bot_id instead of bot_token (filesystem safe)
-    - ✅ Timeout handling added for user input
-    - ✅ Better token validation
-    - ✅ Proper error handling
-    """
+    """Core clone creation with auto command setup."""
     if not CLONE_MODE:
-        text = "Clone feature is disabled!"
+        text = "❌ Clone feature is disabled!"
         if message_to_edit:
             return await message_to_edit.edit_text(text)
         return await client.send_message(chat_id, text)
@@ -114,88 +135,82 @@ async def start_clone_process(client, chat_id, user_id, message_to_edit=None):
     try:
         os.makedirs("clone_sessions", exist_ok=True)
 
-        # Ask for token with timeout handling
+        # Ask for token
         try:
             token_msg = await client.ask(
                 chat_id,
-                "<b>📝 Please forward the message from @BotFather that contains your bot token.</b>\n\n"
-                "Use /cancel to stop this process.",
+                "<b>📝 Forward the message from @BotFather containing your bot token.</b>\n\n"
+                "💡 <i>The token looks like: 123456789:ABCdefGHIjklMNOpqrsTUVwxyz</i>\n\n"
+                "Use /cancel to stop.",
                 timeout=300
             )
-        except (ListenerTimeout, TimeoutError, asyncio.TimeoutError) as e:
-            logger.info(f"User timeout: {e}")
-            text = "⏱️ **Timeout!** You took too long to respond. Please try again."
-            if message_to_edit:
-                return await message_to_edit.edit_text(text)
-            return await client.send_message(chat_id, text)
-        except Exception as e:
-            logger.error(f"Ask error: {e}")
-            text = f"⚠️ **Error:** Unable to receive your message.\n\n<code>{e}</code>"
+        except (ListenerTimeout, TimeoutError, asyncio.TimeoutError):
+            text = "⏱️ **Timeout!** Please try again."
             if message_to_edit:
                 return await message_to_edit.edit_text(text)
             return await client.send_message(chat_id, text)
 
-        # Check for cancel
+        # Check cancel
         if token_msg.text and token_msg.text.lower() == '/cancel':
-            text = "❌ Process canceled!"
+            text = "❌ Process cancelled!"
             if message_to_edit:
                 return await message_to_edit.edit_text(text)
             return await client.send_message(chat_id, text)
 
         # Validate BotFather forward
         if not (token_msg.forward_from and token_msg.forward_from.id == 93372553):
-            text = "❌ **Error:** This message was not forwarded from @BotFather.\n\nPlease forward the message containing your bot token and try again."
+            text = "❌ **Error:** Please forward from @BotFather only!"
             if message_to_edit:
                 return await message_to_edit.edit_text(text)
             return await client.send_message(chat_id, text)
 
-        # Extract token with better validation
-        try:
-            tokens = re.findall(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', token_msg.text)
-            if not tokens:
-                text = "❌ **Invalid Token:** No valid bot token found in the message."
-                if message_to_edit:
-                    return await message_to_edit.edit_text(text)
-                return await client.send_message(chat_id, text)
-            bot_token = tokens[0]
-        except Exception as e:
-            logger.error(f"Token extraction error: {e}")
-            text = f"❌ **Error:** Unable to extract token.\n\n<code>{e}</code>"
+        # Extract token
+        tokens = re.findall(r'\d[0-9]{8,10}:[0-9A-Za-z_-]{35}', token_msg.text)
+        if not tokens:
+            text = "❌ **Invalid Token:** No valid token found!"
             if message_to_edit:
                 return await message_to_edit.edit_text(text)
             return await client.send_message(chat_id, text)
+        
+        bot_token = tokens[0]
 
-        # Check if already cloned
+        # Check duplicate
         if await clone_db.get_clone_by_token(bot_token):
-            text = "⚠️ **Already Cloned:** This bot has already been added as a clone."
+            text = "⚠️ **Already Cloned:** This bot already exists!"
             if message_to_edit:
                 return await message_to_edit.edit_text(text)
             return await client.send_message(chat_id, text)
 
-        # Show processing message
+        # Show progress
         if message_to_edit:
             msg = message_to_edit
-            await msg.edit_text("⏳ Please wait, creating your clone bot...")
+            await msg.edit_text("⏳ Creating your clone bot...\n\n<i>Step 1/3: Verifying token...</i>")
         else:
-            msg = await client.send_message(chat_id, "⏳ Please wait, creating your clone bot...")
+            msg = await client.send_message(chat_id, "⏳ Creating your clone bot...\n\n<i>Step 1/3: Verifying token...</i>")
 
         try:
-            # Create temporary client to get bot info
+            # Get bot info
             temp_session = f"clone_sessions/temp_{user_id}"
             temp_client = Client(temp_session, API_ID, API_HASH, bot_token=bot_token)
+            
+            await msg.edit_text("⏳ Creating your clone bot...\n\n<i>Step 2/3: Connecting to Telegram...</i>")
             await temp_client.start()
             bot_info = await temp_client.get_me()
+            
+            # Auto-setup commands
+            await msg.edit_text("⏳ Creating your clone bot...\n\n<i>Step 3/3: Setting up commands...</i>")
+            commands_set = await setup_bot_commands(temp_client)
+            
             await temp_client.stop()
             
-            # Clean up temp session files
-            temp_files = glob.glob(f"{temp_session}*")
-            for file in temp_files:
+            # Clean temp files
+            for file in glob.glob(f"{temp_session}*"):
                 try:
                     os.remove(file)
                 except:
                     pass
 
-            # FIX: Use bot_id as session name (filesystem safe)
+            # Start permanent clone
             session_name = f"clone_sessions/{bot_info.id}"
             clone_bot = Client(
                 session_name, 
@@ -206,7 +221,7 @@ async def start_clone_process(client, chat_id, user_id, message_to_edit=None):
             )
             await clone_bot.start()
 
-            # Add to database
+            # Save to database
             await clone_db.add_clone(
                 bot_id=bot_info.id,
                 user_id=user_id,
@@ -215,74 +230,137 @@ async def start_clone_process(client, chat_id, user_id, message_to_edit=None):
                 name=bot_info.first_name
             )
 
-            # Add to active clones
             active_clones[bot_info.id] = clone_bot
 
+            # Success message
+            cmd_status = "✅ Commands configured automatically!" if commands_set else "⚠️ Commands setup failed (manual setup required)"
+            
             buttons = [
                 [InlineKeyboardButton('🛠️ Customize Your Clone', callback_data=f'customize_{bot_info.id}')],
+                [InlineKeyboardButton('📋 View Commands', callback_data=f'view_commands_{bot_info.id}')],
                 [InlineKeyboardButton('🔙 Back to Clones', callback_data='clone')]
             ]
+            
             await msg.edit_text(
                 f"<b>✅ Clone Created Successfully!</b>\n\n"
                 f"<b>🤖 Bot:</b> @{bot_info.username}\n"
                 f"<b>📝 Name:</b> {bot_info.first_name}\n"
-                f"<b>🆔 Bot ID:</b> <code>{bot_info.id}</code>",
+                f"<b>🆔 ID:</b> <code>{bot_info.id}</code>\n\n"
+                f"<b>Commands:</b> {cmd_status}\n\n"
+                f"<i>Your bot is ready to use! Start customizing now.</i>",
                 reply_markup=InlineKeyboardMarkup(buttons)
             )
 
         except Exception as e:
             logger.error(f"Clone creation error: {e}", exc_info=True)
-            await msg.edit_text(f"⚠️ **An error occurred while creating the clone:**\n\n<code>{e}</code>")
+            await msg.edit_text(
+                f"❌ <b>Error creating clone:</b>\n\n<code>{str(e)}</code>\n\n"
+                f"<i>Please check your token and try again.</i>"
+            )
 
     except Exception as e:
         logger.error(f"Clone process error: {e}", exc_info=True)
-        text = f"⚠️ **Unexpected Error:**\n\n<code>{e}</code>"
+        text = f"❌ <b>Unexpected Error:</b>\n\n<code>{str(e)}</code>"
         if message_to_edit:
             return await message_to_edit.edit_text(text)
         return await client.send_message(chat_id, text)
 
-# -----------------------------
-# Add Clone Button - Direct Process Start
-# -----------------------------
+# ==================== ADD CLONE BUTTON ====================
 @Client.on_callback_query(filters.regex("^add_clone$"))
 async def add_clone_callback(client, query: CallbackQuery):
-    """
-    FIX: Seedha clone process start hota hai, manual command ki zarurat nahi
-    
-    FIXED: Direct clone creation process starts when button is clicked
-    """
     await query.answer()
-    
-    # Delete old menu message
     try:
         await query.message.delete()
     except:
         pass
-    
-    # Start clone process directly
     await start_clone_process(client, query.message.chat.id, query.from_user.id)
 
-# -----------------------------
-# Clone Creation Command (/clone)
-# -----------------------------
+# ==================== CLONE COMMAND ====================
 @Client.on_message(filters.command("clone") & filters.private)
 async def clone_command(client, message):
-    """
-    FIX: Now uses the same core function as button callback
-    """
     await start_clone_process(client, message.chat.id, message.from_user.id)
 
-# -----------------------------
-# Delete Clone
-# -----------------------------
+# ==================== VIEW COMMANDS ====================
+@Client.on_callback_query(filters.regex("^view_commands_"))
+async def view_commands(client, query: CallbackQuery):
+    await query.answer()
+    
+    commands_text = """<b>📋 Bot Commands List:</b>
+
+<b>/start</b> - 🚀 Start the bot and access files
+<b>/help</b> - ❓ Get help and usage instructions  
+<b>/about</b> - ℹ️ Learn about the bot
+
+<b>📦 Batch Commands:</b>
+<b>/batch</b> - Start batch file collection
+<b>/done</b> - Finish batch and generate link
+<b>/cancel</b> - Cancel current batch process
+
+<i>✅ Commands are already configured in your bot!</i>
+<i>Users can see them by typing / in your bot.</i>"""
+
+    buttons = [[InlineKeyboardButton('🔙 Back', callback_data=f'customize_{query.data.split("_")[2]}')]]
+    
+    await query.message.edit_text(commands_text, reply_markup=InlineKeyboardMarkup(buttons))
+
+# ==================== RESTART CLONE ====================
+@Client.on_callback_query(filters.regex("^restart_"))
+async def restart_clone(client, query: CallbackQuery):
+    bot_id = int(query.data.split("_")[1])
+    clone = await clone_db.get_clone(bot_id)
+    
+    if not clone:
+        return await query.answer("Clone not found!", show_alert=True)
+    
+    if clone['user_id'] != query.from_user.id and query.from_user.id not in ADMINS:
+        return await query.answer("Not your clone!", show_alert=True)
+    
+    await query.answer("🔄 Restarting...", show_alert=False)
+    
+    try:
+        # Stop if running
+        if bot_id in active_clones:
+            await active_clones[bot_id].stop()
+            await asyncio.sleep(0.5)
+            active_clones.pop(bot_id, None)
+        
+        # Restart
+        session_name = f"clone_sessions/{bot_id}"
+        clone_bot = Client(
+            session_name,
+            API_ID,
+            API_HASH,
+            bot_token=clone['bot_token'],
+            plugins={"root": "clone_plugins"}
+        )
+        await clone_bot.start()
+        
+        # Re-setup commands
+        await setup_bot_commands(clone_bot)
+        
+        active_clones[bot_id] = clone_bot
+        
+        await query.message.edit_text(
+            f"<b>✅ Restarted Successfully!</b>\n\n"
+            f"<b>🤖 Bot:</b> @{clone['username']}\n"
+            f"<i>Your bot is now online with updated commands.</i>",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
+            ]])
+        )
+        
+    except Exception as e:
+        logger.error(f"Restart error: {e}")
+        await query.message.edit_text(
+            f"❌ <b>Restart Failed:</b>\n\n<code>{e}</code>",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton('🔙 Back', callback_data=f'customize_{bot_id}')
+            ]])
+        )
+
+# ==================== DELETE CLONE ====================
 @Client.on_callback_query(filters.regex("^delete_clone_"))
 async def delete_clone_button_callback(client, query: CallbackQuery):
-    """
-    FIXED ISSUES:
-    - ✅ Proper error handling when stopping bot
-    - ✅ Session files are now deleted from filesystem
-    - ✅ Menu refreshes before showing alert
-    """
     bot_id = int(query.data.split("_")[2])
     clone = await clone_db.get_clone(bot_id)
     
@@ -291,121 +369,92 @@ async def delete_clone_button_callback(client, query: CallbackQuery):
 
     user_id = query.from_user.id
     if clone['user_id'] != user_id and user_id not in ADMINS:
-        return await query.answer("❌ This is not your clone!", show_alert=True)
+        return await query.answer("❌ Not your clone!", show_alert=True)
 
-    # Stop bot if running - COMPLETE SHUTDOWN
+    # Stop bot
     if bot_id in active_clones:
         try:
-            clone_client = active_clones[bot_id]
-            
-            # FIX: Proper shutdown sequence
-            logger.info(f"Stopping clone bot {bot_id}...")
-            
-            # Stop the client (this stops handlers and disconnect)
-            await clone_client.stop()
-            
-            # Give time for cleanup
+            await active_clones[bot_id].stop()
             await asyncio.sleep(0.5)
-            
-            logger.info(f"✅ Stopped clone bot {bot_id}")
         except Exception as e:
-            logger.error(f"Error stopping clone {bot_id}: {e}")
+            logger.error(f"Stop error: {e}")
         finally:
-            # FIX: Always remove from active_clones dict
             active_clones.pop(bot_id, None)
 
-    # FIX: Delete session files from filesystem
+    # Delete files
     try:
-        session_files = glob.glob(f"clone_sessions/{bot_id}*")
-        for file in session_files:
+        for file in glob.glob(f"clone_sessions/{bot_id}*"):
             try:
                 os.remove(file)
-                logger.info(f"Deleted session file: {file}")
             except Exception as e:
-                logger.error(f"Failed to delete session file {file}: {e}")
+                logger.error(f"File delete error: {e}")
     except Exception as e:
-        logger.error(f"Error cleaning up session files for bot {bot_id}: {e}")
+        logger.error(f"Cleanup error: {e}")
 
-    # Delete from database
+    # Delete from DB
     await clone_db.delete_clone_by_id(bot_id)
     
-    # FIX: Refresh menu first, then show alert
     await clone_management_menu(client, query)
     await query.answer("✅ Clone deleted successfully!", show_alert=True)
 
-# -----------------------------
-# Restart all clones (on bot startup)
-# -----------------------------
+# ==================== RESTART ALL CLONES ====================
 async def restart_bots():
-    """
-    FIXED ISSUES:
-    - ✅ Session naming now consistent (uses bot_id)
-    - ✅ Better error handling per clone
-    - ✅ Continues even if one clone fails
-    - ✅ Skips already running clones
-    """
+    """Restart all clones on bot startup."""
     if not CLONE_MODE:
         logger.info("Clone mode disabled")
         return
 
     os.makedirs("clone_sessions", exist_ok=True)
     clones = await clone_db.get_all_clones()
-    logger.info(f"🔄 Found {len(clones)} clones in database")
+    logger.info(f"🔄 Found {len(clones)} clones")
 
-    success_count = 0
+    success = 0
     for clone in clones:
         bot_id = clone['bot_id']
-        bot_token = clone['bot_token']
-        username = clone.get('username', 'unknown')
         
-        # FIX: Skip if already running
         if bot_id in active_clones:
-            logger.info(f"⚠️ Clone {bot_id} already running, skipping...")
-            success_count += 1
+            logger.info(f"⚠️ Clone {bot_id} already running")
+            success += 1
             continue
         
         try:
-            # FIX: Use bot_id as session name (consistent with creation)
             session_name = f"clone_sessions/{bot_id}"
             client = Client(
                 session_name, 
                 API_ID, 
                 API_HASH, 
-                bot_token=bot_token, 
+                bot_token=clone['bot_token'], 
                 plugins={"root": "clone_plugins"}
             )
             await client.start()
+            
+            # Setup commands on restart
+            await setup_bot_commands(client)
+            
             active_clones[bot_id] = client
-            success_count += 1
-            logger.info(f"✅ Restarted: @{username} (ID: {bot_id})")
+            success += 1
+            logger.info(f"✅ Restarted: @{clone['username']}")
         except Exception as e:
-            logger.error(f"❌ Failed to restart @{username} (ID: {bot_id}): {e}")
-            # Continue with next clone even if one fails
+            logger.error(f"❌ Failed @{clone['username']}: {e}")
 
-    logger.info(f"✅ Successfully restarted {success_count}/{len(clones)} clones")
+    logger.info(f"✅ Restarted {success}/{len(clones)} clones")
 
-# -----------------------------
-# Cleanup Function (for graceful shutdown)
-# -----------------------------
+# ==================== STOP ALL CLONES ====================
 async def stop_all_clones():
-    """
-    ✅ NEW: Properly stop all running clones
-    Used during bot shutdown or restart
-    """
+    """Stop all running clones."""
     if not active_clones:
-        logger.info("No active clones to stop")
         return
     
-    logger.info(f"🛑 Stopping {len(active_clones)} active clone(s)...")
+    logger.info(f"🛑 Stopping {len(active_clones)} clones...")
     stopped = 0
     
     for bot_id, client in list(active_clones.items()):
         try:
             await client.stop()
             stopped += 1
-            logger.info(f"  ✅ Stopped clone {bot_id}")
+            logger.info(f"✅ Stopped {bot_id}")
         except Exception as e:
-            logger.error(f"  ❌ Error stopping clone {bot_id}: {e}")
+            logger.error(f"❌ Error stopping {bot_id}: {e}")
     
     active_clones.clear()
-    logger.info(f"✅ Stopped {stopped} clone(s)")
+    logger.info(f"✅ Stopped {stopped} clones")
