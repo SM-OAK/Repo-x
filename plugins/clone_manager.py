@@ -32,7 +32,8 @@ async def setup_bot_commands(client):
         ("start", "🚀 Start the bot"),
         ("help", "❓ Get help information"),
         ("about", "ℹ️ About the bot"),
-        ("batch", "📦 Create batch link (multiple files)"),
+        ("batch", "📦 Manual batch (collect files)"),
+        ("genbatch", "⚡ Quick batch (from channel range)"),
         ("done", "✅ Finish batch and get link"),
         ("cancel", "❌ Cancel current batch")
     ]
@@ -287,17 +288,30 @@ async def view_commands(client, query: CallbackQuery):
     
     commands_text = """<b>📋 Bot Commands List:</b>
 
-<b>/start</b> - 🚀 Start the bot and access files
-<b>/help</b> - ❓ Get help and usage instructions  
-<b>/about</b> - ℹ️ Learn about the bot
+<b>Basic Commands:</b>
+• <b>/start</b> - 🚀 Start bot & access files
+• <b>/help</b> - ❓ Get help instructions  
+• <b>/about</b> - ℹ️ Learn about the bot
 
 <b>📦 Batch Commands:</b>
-<b>/batch</b> - Start batch file collection
-<b>/done</b> - Finish batch and generate link
-<b>/cancel</b> - Cancel current batch process
+• <b>/batch</b> - Manual batch (collect files one by one)
+• <b>/genbatch</b> - ⚡ Quick batch (from channel range - FAST!)
+• <b>/done</b> - Finish batch and generate link
+• <b>/cancel</b> - Cancel current batch
 
-<i>✅ Commands are already configured in your bot!</i>
-<i>Users can see them by typing / in your bot.</i>"""
+<b>💡 Batch Types:</b>
+
+<b>1️⃣ Manual Batch (/batch):</b>
+└ Collect files one by one
+└ Send /done when finished
+└ Good for selective files
+
+<b>2️⃣ Quick Batch (/genbatch):</b>
+└ Forward first & last message from channel
+└ Instant batch creation - SUPER FAST!
+└ Good for bulk files (100s of files in seconds!)
+
+<i>✅ All commands are pre-configured!</i>"""
 
     buttons = [[InlineKeyboardButton('🔙 Back', callback_data=f'customize_{query.data.split("_")[2]}')]]
     
