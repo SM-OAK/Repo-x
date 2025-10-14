@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# clone_plugins/commands.py
+# clone_plugins/clonemade.py
 import base64
 import asyncio
 import logging
@@ -260,7 +260,7 @@ async def start_cmd(client, msg):
                 await asyncio.sleep(0.5)  # Small delay to avoid flood
                 
                 # Update progress every 5 files
-                if sent_count % 5 == 0:
+                if sent_count % 5 == 0 and sent_count > 0:
                     try:
                         await loading.edit_text(f"<b>📦 Sending... {sent_count}/{total}</b>")
                     except:
@@ -307,8 +307,11 @@ async def file_upload(client, msg):
     
     # Check batch mode
     user_id = msg.from_user.id
-    if user_id in batch_data and isinstance(batch_data[user_id], dict):
-        return await msg.reply("<b>📦 You're in batch mode! Send /done to finish or /cancel to stop.</b>")
+    if user_id in batch_data and isinstance(batch_data.get(user_id), dict):
+        # Allow file collection for manual batch
+        if batch_data[user_id].get('type') == 'manual':
+            return
+        return await msg.reply("<b>📦 You're in a different batch mode! Use /cancel to stop.</b>")
     
     # Upload to DB
     db_ch = settings.get('db_channel') or LOG_CHANNEL
@@ -342,42 +345,57 @@ async def file_upload(client, msg):
 # ==================== MANUAL BATCH (Collect Files) ====================
 @Client.on_message(filters.command("batch") & filters.private, group=1)
 async def batch_start(client, msg):
-    settings = await get_clone_settings(client)
-    db_ch = settings.get('db_channel') or LOG_CHANNEL
-    
-    if not db_ch:
-        return await msg.reply("<b>❌ DB Channel required for batch!</b>")
-    
     user_id = msg.from_user.id
-    batch_data[user_id] = {'files': [], 'channel': db_ch, 'type': 'manual'}
+    batch_data[user_id] = {'files': [], 'type': 'manual'}
     
     await msg.reply(
         "<b>📦 Manual Batch Mode Started!</b>\n\n"
-        "📤 Send files one by one.\n"
-        "✅ Use /done when finished.\n"
-        "❌ Use /cancel to stop."
+        "📤 Send me your files one by one.\n"
+        "✅ Use /done when you have sent all files.\n"
+        "❌ Use /cancel to stop at any time."
     )
 
 @Client.on_message(filters.command("done") & filters.private, group=1)
 async def batch_done(client, msg):
     user_id = msg.from_user.id
     
-    if user_id not in batch_data or not isinstance(batch_data[user_id], dict):
-        return await msg.reply("<b>❌ No active batch!</b>")
+    if user_id not in batch_data or not isinstance(batch_data.get(user_id), dict) or batch_data[user_id].get('type') != 'manual':
+        return await msg.reply("<b>❌ You are not in manual batch mode.</b>")
     
-    files = batch_data[user_id]['files']
+    files = batch_data[user_id].get('files', [])
     
     if not files:
         del batch_data[user_id]
-        return await msg.reply("<b>❌ No files in batch!</b>")
+        return await msg.reply("<b>❌ No files were added to the batch! Batch cancelled.</b>")
     
     if len(files) < 2:
         del batch_data[user_id]
-        return await msg.reply("<b>❌ Batch needs at least 2 files!</b>")
+        return await msg.reply("<b>❌ A batch needs at least 2 files! Batch cancelled.</b>")
     
+    # Get DB channel
+    settings = await get_clone_settings(client)
+    db_ch = settings.get('db_channel') or LOG_CHANNEL
+    if not db_ch:
+        del batch_data[user_id]
+        return await msg.reply("<b>❌ DB Channel not configured! Cannot create batch.</b>")
+
+    status = await msg.reply("<b>📤 Uploading files to DB channel...</b>")
+    
+    message_ids = []
+    try:
+        for file_id in files:
+            post = await client.copy_message(db_ch, from_chat_id=user_id, message_id=file_id)
+            message_ids.append(post.id)
+            await asyncio.sleep(0.5)
+    except Exception as e:
+        logger.error(f"Manual batch upload error: {e}")
+        await status.edit_text("<b>❌ Failed to save batch files to DB! Please try again.</b>")
+        del batch_data[user_id]
+        return
+
     # Create batch link using range
-    first_id = files[0]
-    last_id = files[-1]
+    first_id = min(message_ids)
+    last_id = max(message_ids)
     encoded = encode_batch_range(first_id, last_id)
     del batch_data[user_id]
     
@@ -388,9 +406,9 @@ async def batch_done(client, msg):
         [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_batch_{encoded}")]
     ])
     
-    await msg.reply(
+    await status.edit_text(
         f"<b>✅ Manual Batch Created!</b>\n\n"
-        f"📦 Files: {len(files)}\n"
+        f"📦 Files: {len(message_ids)}\n"
         f"🔗 Link: <code>{link}</code>\n\n"
         f"<i>Users will get all files when they click the link.</i>",
         reply_markup=buttons,
@@ -401,10 +419,6 @@ async def batch_done(client, msg):
 @Client.on_message(filters.command("genbatch") & filters.private, group=1)
 async def genbatch_cmd(client, msg):
     settings = await get_clone_settings(client)
-    db_ch = settings.get('db_channel') or LOG_CHANNEL
-    
-    if not db_ch:
-        return await msg.reply("<b>❌ DB Channel not configured!</b>")
     
     # Authorization check
     clone = await clone_db.get_clone(client.me.id) if DB_LOADED else None
@@ -415,13 +429,14 @@ async def genbatch_cmd(client, msg):
         return await msg.reply("<b>⚠️ Only admins can use this command!</b>")
     
     user_id = msg.from_user.id
-    batch_data[user_id] = {'type': 'genbatch', 'channel': db_ch}
+    batch_data[user_id] = {'type': 'genbatch'}
     
     await msg.reply(
         "<b>⚡ Quick Batch Mode!</b>\n\n"
         "<b>📝 Instructions:</b>\n"
-        "1️⃣ Forward the <b>FIRST message</b> from your batch channel (with forward tag)\n"
-        "2️⃣ Forward the <b>LAST message</b> from your batch channel (with forward tag)\n\n"
+        "1️⃣ Forward the <b>FIRST message</b> from your source channel.\n"
+        "2️⃣ Forward the <b>LAST message</b> from the same channel.\n\n"
+        "<i>Note: Both messages must be from the same channel.</i>\n\n"
         "❌ Use /cancel to stop."
     )
 
@@ -429,62 +444,84 @@ async def genbatch_cmd(client, msg):
 async def handle_genbatch_forward(client, msg):
     user_id = msg.from_user.id
     
-    if user_id not in batch_data:
+    if user_id not in batch_data or batch_data.get(user_id, {}).get('type') != 'genbatch':
         return
     
-    if batch_data[user_id].get('type') != 'genbatch':
+    if not msg.forward_from_chat:
+        return await msg.reply("<b>❌ Please forward messages from a public or private channel, not from a user.</b>")
+
+    # --- START OF FIXED LOGIC ---
+    batch_info = batch_data[user_id]
+
+    # Step 1: Capture the first message and set the source channel
+    if 'first_msg_id' not in batch_info:
+        batch_info['first_msg_id'] = msg.forward_from_message_id
+        batch_info['source_channel'] = msg.forward_from_chat.id # Dynamically set channel
+        batch_info['source_channel_name'] = msg.forward_from_chat.title or "this channel"
+        
+        await msg.reply(
+            f"<b>✅ First message saved!</b>\n"
+            f"<b>Source Channel:</b> {batch_info['source_channel_name']}\n"
+            f"<b>Message ID:</b> <code>{msg.forward_from_message_id}</code>\n\n"
+            f"➡️ Now, forward the <b>LAST message</b> from the same channel."
+        )
         return
-    
-    # Check if forwarded from the correct channel
-    db_ch = batch_data[user_id]['channel']
-    
-    if msg.forward_from_chat and msg.forward_from_chat.id == db_ch:
-        if 'first_msg_id' not in batch_data[user_id]:
-            batch_data[user_id]['first_msg_id'] = msg.forward_from_message_id
-            await msg.reply(
-                f"<b>✅ First message saved!</b>\n"
-                f"<b>ID:</b> <code>{msg.forward_from_message_id}</code>\n\n"
-                f"Now forward the <b>LAST message</b> of your batch."
-            )
-        elif 'last_msg_id' not in batch_data[user_id]:
-            last_msg_id = msg.forward_from_message_id
-            first_msg_id = batch_data[user_id]['first_msg_id']
-            
-            if last_msg_id <= first_msg_id:
-                return await msg.reply("<b>❌ Last message must be after first message!</b>")
-            
-            total = last_msg_id - first_msg_id + 1
-            encoded = encode_batch_range(first_msg_id, last_msg_id)
-            link = f"https://t.me/{client.me.username}?start={encoded}"
-            
-            del batch_data[user_id]
-            
-            buttons = InlineKeyboardMarkup([
-                [InlineKeyboardButton("🔗 Open Batch", url=link)],
-                [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_batch_{encoded}")]
-            ])
+
+    # Step 2: Capture the second message and validate it
+    if 'last_msg_id' not in batch_info:
+        # Check if the second message is from the SAME channel as the first
+        if msg.forward_from_chat.id != batch_info['source_channel']:
+            link, title = await get_channel_info(client, batch_info['source_channel'])
+            keyboard = None
+            if link:
+                keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f"🔗 Go to {title}", url=link)]])
             
             await msg.reply(
-                f"<b>⚡ Quick Batch Created!</b>\n\n"
-                f"📦 Total Files: {total}\n"
-                f"📍 From: <code>{first_msg_id}</code>\n"
-                f"📍 To: <code>{last_msg_id}</code>\n"
-                f"🔗 Link: <code>{link}</code>\n\n"
-                f"<i>Share this link to provide access to all files!</i>",
-                reply_markup=buttons,
-                disable_web_page_preview=True
+                f"<b>❌ Wrong Channel!</b>\n\nPlease forward a message from the channel you started with: <b>{title}</b>.",
+                reply_markup=keyboard
             )
-    else:
-        await msg.reply(f"<b>❌ Please forward from your batch channel only!</b>")
+            return
+
+        last_msg_id = msg.forward_from_message_id
+        first_msg_id = batch_info['first_msg_id']
+        
+        if last_msg_id <= first_msg_id:
+            await msg.reply("<b>❌ Error: The last message's ID must be greater than the first message's ID. Please forward them in the correct order.</b>")
+            # Reset to let user try again with the last message
+            del batch_info['last_msg_id']
+            return
+            
+        total = last_msg_id - first_msg_id + 1
+        encoded = encode_batch_range(first_msg_id, last_msg_id)
+        link = f"https://t.me/{client.me.username}?start={encoded}"
+        
+        del batch_data[user_id] # Clean up
+        
+        buttons = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔗 Open Batch", url=link)],
+            [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_batch_{encoded}")]
+        ])
+        
+        await msg.reply(
+            f"<b>⚡ Quick Batch Created!</b>\n\n"
+            f"📦 Total Files: {total}\n"
+            f"📍 From Message ID: <code>{first_msg_id}</code>\n"
+            f"📍 To Message ID: <code>{last_msg_id}</code>\n"
+            f"🔗 Link: <code>{link}</code>\n\n"
+            f"<i>Share this link to provide access to all files in the range!</i>",
+            reply_markup=buttons,
+            disable_web_page_preview=True
+        )
+    # --- END OF FIXED LOGIC ---
 
 @Client.on_message(filters.command("cancel") & filters.private, group=1)
 async def batch_cancel(client, msg):
     user_id = msg.from_user.id
     if user_id in batch_data:
         del batch_data[user_id]
-        await msg.reply("<b>❌ Batch cancelled!</b>")
+        await msg.reply("<b>❌ Action cancelled!</b>")
     else:
-        await msg.reply("<b>❌ No active batch!</b>")
+        await msg.reply("<b>❌ Nothing to cancel.</b>")
 
 @Client.on_message(filters.command(["help", "about"]) & filters.private, group=1)
 async def help_about(client, msg):
@@ -526,35 +563,31 @@ async def callbacks(client, query: CallbackQuery):
 async def copy_callback(client, query: CallbackQuery):
     parts = query.data.split("_", 2)
     
-    if len(parts) == 3 and parts[1] == "batch":
+    if len(parts) >= 2 and parts[1] == "batch":
         encoded = parts[2]
-        link = f"https://t.me/{client.me.username}?start={encoded}"
+        link_type = "Batch Link"
     else:
         encoded = parts[1]
-        link = f"https://t.me/{client.me.username}?start={encoded}"
-    
-    await query.answer(f"📋 Link copied!\n\n{link}", show_alert=True)
+        link_type = "File Link"
+
+    link = f"https://t.me/{client.me.username}?start={encoded}"
+    await query.answer(f"📋 {link_type} copied!\n\n{link}", show_alert=True)
 
 # Handle batch file collection (manual batch)
 @Client.on_message((filters.document | filters.video | filters.audio | filters.photo) & filters.private, group=2)
 async def batch_collect(client, msg):
     user_id = msg.from_user.id
     
-    if user_id not in batch_data or not isinstance(batch_data[user_id], dict):
-        return
-    
-    if batch_data[user_id].get('type') != 'manual':
+    if user_id not in batch_data or not isinstance(batch_data.get(user_id), dict) or batch_data[user_id].get('type') != 'manual':
         return
     
     try:
-        db_ch = batch_data[user_id]['channel']
-        post = await msg.copy(db_ch)
-        batch_data[user_id]['files'].append(post.id)
-        
+        # We store the message ID from the user's chat to copy it later
+        batch_data[user_id]['files'].append(msg.id)
         count = len(batch_data[user_id]['files'])
-        await msg.reply(f"<b>✅ File {count} added to batch!</b>")
+        await msg.reply(f"<b>✅ File {count} added to batch! Use /done when finished.</b>")
     except Exception as e:
         logger.error(f"Batch collect error: {e}")
         await msg.reply("<b>❌ Failed to add file!</b>")
 
-logger.info("✅ Clone commands loaded with fast batch system!")
+logger.info("✅ Clone commands loaded with improved batch system!")
