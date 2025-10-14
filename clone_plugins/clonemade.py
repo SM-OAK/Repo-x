@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-# clone_plugins/clonemade.py
+# clone_plugins/commands.py
 import base64
 import asyncio
 import logging
@@ -158,12 +158,13 @@ def decode_batch_range(data):
         return None, None
 
 async def send_file(client, msg, file_id):
-    """Send a single file from DB channel to user. Used for single file links."""
+    """Send a single file from DB channel to user. Used for single file & batch links."""
     settings = await get_clone_settings(client)
     db_ch = settings.get('db_channel') or LOG_CHANNEL
     
     if not db_ch:
-        await msg.reply("<b>❌ DB Channel not configured!</b>")
+        # Avoid replying if it's part of a batch send
+        if msg: await msg.reply("<b>❌ DB Channel not configured!</b>")
         return False
     
     try:
@@ -187,15 +188,10 @@ async def send_file(client, msg, file_id):
         
         if settings.get('auto_delete', AUTO_DELETE_MODE):
             del_time = settings.get('auto_delete_time', AUTO_DELETE_TIME)
-            mins, secs = divmod(del_time, 60)
-            time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
-            warn = await msg.reply(f"<b>⚠️ This file will be deleted in {time_str}. Save it now!</b>")
             
             async def delete_after():
                 await asyncio.sleep(del_time)
-                try:
-                    await sent.delete()
-                    await warn.edit_text("✅ File deleted.")
+                try: await sent.delete()
                 except: pass
             
             asyncio.create_task(delete_after())
@@ -204,8 +200,12 @@ async def send_file(client, msg, file_id):
             await clone_db.update_last_used(client.me.id)
         return True
         
+    except FloodWait as fw:
+        logger.warning(f"Flood wait of {fw.value} seconds from Telegram.")
+        await asyncio.sleep(fw.value)
+        return await send_file(client, msg, file_id) # Retry after waiting
     except Exception as e:
-        logger.error(f"Send file error: {e}")
+        logger.error(f"Send file error for file_id {file_id}: {e}")
         return False
 
 # ==================== COMMANDS ====================
@@ -235,54 +235,34 @@ async def start_cmd(client, msg):
         data = msg.command[1]
         first_id, last_id = decode_batch_range(data)
         
-        # --- OPTIMIZED BATCH SENDING LOGIC ---
+        # --- COMPATIBLE BATCH SENDING LOGIC (FIXED) ---
         if first_id and last_id:
-            db_ch = settings.get('db_channel') or LOG_CHANNEL
-            if not db_ch:
-                return await msg.reply("<b>❌ DB Channel not configured! Cannot send batch.</b>")
-
-            loading = await msg.reply("<b>🚀 Preparing your batch... Please wait.</b>")
-            message_ids = list(range(first_id, last_id + 1))
-            total = len(message_ids)
-            protect = settings.get('protect_mode', False)
+            loading = await msg.reply("<b>📦 Sending batch files... Please wait.</b>")
+            total = last_id - first_id + 1
             sent_count = 0
-
+            
             try:
-                # Use the efficient copy_messages for speed
-                sent_messages = await client.copy_messages(
-                    chat_id=msg.from_user.id,
-                    from_chat_id=db_ch,
-                    message_ids=message_ids,
-                    protect_content=protect
-                )
-                sent_count = len(sent_messages)
-                await loading.edit_text(f"<b>✅ Batch Sent!</b>\n\nSent {sent_count} of {total} files.")
+                for file_id in range(first_id, last_id + 1):
+                    success = await send_file(client, msg, file_id)
+                    if success:
+                        sent_count += 1
+                    await asyncio.sleep(1)  # Delay to avoid flood waits
+                    
+                    if sent_count % 5 == 0 and sent_count > 0:
+                        try:
+                            await loading.edit_text(f"<b>📦 Sending... {sent_count}/{total} files sent.</b>")
+                        except: pass
+                
+                await loading.edit_text(f"<b>✅ Batch Complete!</b>\n\nSent {sent_count} of {total} files.")
 
-                # Handle auto-delete for the entire batch at once
                 if sent_count > 0 and settings.get('auto_delete', AUTO_DELETE_MODE):
                     del_time = settings.get('auto_delete_time', AUTO_DELETE_TIME)
                     mins, secs = divmod(del_time, 60)
                     time_str = f"{mins}m {secs}s" if mins else f"{secs}s"
-                    warn = await msg.reply(f"<b>⚠️ These {sent_count} files will be deleted in {time_str}. Please save them now!</b>")
-                    
-                    async def delete_batch_after():
-                        await asyncio.sleep(del_time)
-                        try:
-                            ids_to_delete = [m.id for m in sent_messages]
-                            await client.delete_messages(msg.from_user.id, ids_to_delete)
-                            await warn.edit_text(f"✅ All {sent_count} batch files have been deleted.")
-                        except Exception as e:
-                            logger.error(f"Auto-delete batch error: {e}")
-                            await warn.edit_text(f"❌ Could not delete all batch files.")
-                    
-                    asyncio.create_task(delete_batch_after())
+                    await msg.reply(f"<b>⚠️ Note: The {sent_count} files you just received will be auto-deleted in {time_str}.</b>")
 
-            except FloodWait as fw:
-                await asyncio.sleep(fw.value)
-                await loading.edit_text(f"<b>⏳ Flood wait... Retrying in {fw.value}s.</b>")
-                # You might want to add retry logic here if needed
             except Exception as e:
-                logger.error(f"Batch sending error: {e}")
+                logger.error(f"Batch sending loop error: {e}")
                 await loading.edit_text(f"<b>❌ An error occurred sending the batch. Sent {sent_count}/{total}.</b>")
             return
 
@@ -429,12 +409,11 @@ async def handle_genbatch_forward(client, msg):
         if last_msg_id <= first_msg_id:
             return await msg.reply("<b>❌ Last message must be after the first! Start over with /cancel.</b>")
             
-        # --- NEW: ADD CHANNEL LINK TO CONFIRMATION ---
         ch_link, ch_title = await get_channel_info(client, batch_info['source_channel'])
         channel_info_text = f"🔗 Source: <a href='{ch_link}'>{ch_title}</a>\n" if ch_link else ""
 
         total = last_msg_id - first_msg_id + 1
-        encoded = encode_batch_range(first_msg_id, last_msg_id)
+        encoded = encode_batch_range(first_msg_id, last_id)
         link = f"https://t.me/{client.me.username}?start={encoded}"
         del batch_data[user_id]
         buttons = InlineKeyboardMarkup([[InlineKeyboardButton("🔗 Open Batch", url=link)], [InlineKeyboardButton("📋 Copy Link", callback_data=f"copy_batch_{encoded}")]])
@@ -504,4 +483,4 @@ async def batch_collect(client, msg):
         logger.error(f"Batch collect error: {e}")
         await msg.reply("<b>❌ Failed to add file!</b>")
 
-logger.info("✅ Clone commands loaded with OPTIMIZED batch system!")
+logger.info("✅ Clone commands loaded with compatible batch system!")
